@@ -1,4 +1,7 @@
 {
     "editor.formatOnSave": true,
     "files.insertFinalNewline": true,
+    "clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}/src/out/host"
+    ],
 }
