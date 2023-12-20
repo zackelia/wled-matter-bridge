@@ -39,6 +39,7 @@
 #include <setup_payload/SetupPayload.h>
 
 #include <pthread.h>
+#include <string>
 #include <sys/ioctl.h>
 
 #include "CommissionableInit.h"
@@ -46,6 +47,7 @@
 #include "main.h"
 #include <app/server/Server.h>
 
+#include <array>
 #include <cassert>
 #include <iostream>
 #include <vector>
@@ -139,9 +141,9 @@ DECLARE_DYNAMIC_CLUSTER(OnOff::Id, onOffAttrs, onOffIncomingCommands, nullptr),
 
 // Declare Bridged Light endpoint
 DECLARE_DYNAMIC_ENDPOINT(bridgedLightEndpoint, bridgedLightClusters);
-DataVersion gLight1DataVersions[ArraySize(bridgedLightClusters)];
 
-DeviceOnOff Light1("Light 1", "Office");
+std::vector<DeviceOnOff *> gLights;
+std::vector<std::array<DataVersion, ArraySize(bridgedLightClusters)>> gDataVersions;
 
 Room room1("Room 1", 0xE001, Actions::EndpointListTypeEnum::kRoom, true);
 
@@ -497,7 +499,8 @@ bool kbhit()
 
 void * bridge_polling_thread(void * context)
 {
-    bool light1_added = true;
+    size_t num_lights = 0;
+
     while (true)
     {
         if (kbhit())
@@ -505,33 +508,46 @@ void * bridge_polling_thread(void * context)
             int ch = getchar();
 
             // Commands used for the actions bridge test plan.
-            if (ch == '4' && light1_added == true)
+            if (ch == '4' && gLights.size() > 0)
             {
                 // TC-BR-2 step 4, Remove Light 1
-                RemoveDeviceEndpoint(&Light1);
-                light1_added = false;
+                num_lights--;
+                auto light = gLights.at(0);
+                RemoveDeviceEndpoint(light);
+                gLights.erase(gLights.begin());
+                gDataVersions.erase(gDataVersions.begin());
+                delete light;
             }
-            if (ch == '5' && light1_added == false)
+            if (ch == '5' && gLights.size() < CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT)
             {
+                std::string name = "MyLight";
+                name.append(std::to_string(num_lights));
+                auto light = new DeviceOnOff(name.c_str(), "Office");
+                light->SetReachable(true);
+                light->SetChangeCallback(&HandleDeviceOnOffStatusChanged);
+                gLights.push_back(light);
+                gDataVersions.push_back({ 0 });
+
                 // TC-BR-2 step 5, Add Light 1 back
-                AddDeviceEndpoint(&Light1, &bridgedLightEndpoint, Span<const EmberAfDeviceType>(gBridgedOnOffDeviceTypes),
-                                  Span<DataVersion>(gLight1DataVersions), 1);
-                light1_added = true;
+                AddDeviceEndpoint(gLights.at(num_lights), &bridgedLightEndpoint,
+                                  Span<const EmberAfDeviceType>(gBridgedOnOffDeviceTypes),
+                                  Span<DataVersion>(gDataVersions.at(num_lights)), 1);
+                num_lights++;
             }
             if (ch == 'b')
             {
                 // TC-BR-3 step 1b, rename lights
-                if (light1_added)
+                if (gLights.size())
                 {
-                    Light1.SetName("Light 1b");
+                    gLights.at(0)->SetName("Light 1b");
                 }
             }
             if (ch == 'c')
             {
                 // TC-BR-3 step 2c, change the state of the lights
-                if (light1_added)
+                if (gLights.size())
                 {
-                    Light1.Toggle();
+                    gLights.at(0)->Toggle();
                 }
             }
 
@@ -562,11 +578,6 @@ void ApplicationInit()
     // Clear out the device database
     memset(gDevices, 0, sizeof(gDevices));
 
-    // Setup Mock Devices
-    Light1.SetReachable(true);
-
-    Light1.SetChangeCallback(&HandleDeviceOnOffStatusChanged);
-
     // Set starting endpoint id where dynamic endpoints will be assigned, which
     // will be the next consecutive endpoint id after the last fixed endpoint.
     gFirstDynamicEndpointId = static_cast<chip::EndpointId>(
@@ -576,10 +587,6 @@ void ApplicationInit()
     // Disable last fixed endpoint, which is used as a placeholder for all of the
     // supported clusters so that ZAP will generated the requisite code.
     emberAfEndpointEnableDisable(emberAfEndpointFromIndex(static_cast<uint16_t>(emberAfFixedEndpointCount() - 1)), false);
-
-    // Add light 1 -> will be mapped to ZCL endpoints 3
-    AddDeviceEndpoint(&Light1, &bridgedLightEndpoint, Span<const EmberAfDeviceType>(gBridgedOnOffDeviceTypes),
-                      Span<DataVersion>(gLight1DataVersions), 1);
 
     gRooms.push_back(&room1);
 
