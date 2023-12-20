@@ -34,9 +34,19 @@ executable("chip-bridge-app") {
     "${chip_root}/src/lib",
   ]
 
+  libs = [
+    "cmake-build/third_party/curl/lib/libcurl-d.a",
+    "cmake-build/third_party/cJSON/libcjson.a",
+    "z"
+  ]
+
   cflags = [ "-Wconversion" ]
 
-  include_dirs = [ "include" ]
+  include_dirs = [ 
+    "include",
+    "third_party/curl/include/",
+    "third_party/cJSON/"
+  ]
 
   output_dir = root_out_dir
 }
