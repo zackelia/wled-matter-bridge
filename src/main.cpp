@@ -52,6 +52,10 @@
 #include <iostream>
 #include <vector>
 
+#include "wled.h"
+// TODO: Delete when mDNS is done
+#include "private.h"
+
 using namespace chip;
 using namespace chip::app;
 using namespace chip::Credentials;
@@ -142,7 +146,7 @@ DECLARE_DYNAMIC_CLUSTER(OnOff::Id, onOffAttrs, onOffIncomingCommands, nullptr),
 // Declare Bridged Light endpoint
 DECLARE_DYNAMIC_ENDPOINT(bridgedLightEndpoint, bridgedLightClusters);
 
-std::vector<DeviceOnOff *> gLights;
+std::vector<WLED *> gLights;
 std::vector<std::array<DataVersion, ArraySize(bridgedLightClusters)>> gDataVersions;
 
 Room room1("Room 1", 0xE001, Actions::EndpointListTypeEnum::kRoom, true);
@@ -520,9 +524,7 @@ void * bridge_polling_thread(void * context)
             }
             if (ch == '5' && gLights.size() < CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT)
             {
-                std::string name = "MyLight";
-                name.append(std::to_string(num_lights));
-                auto light = new DeviceOnOff(name.c_str(), "Office");
+                auto light = new WLED(WLED_IP, "Zack's Desk", "Office");
                 light->SetReachable(true);
                 light->SetChangeCallback(&HandleDeviceOnOffStatusChanged);
                 gLights.push_back(light);

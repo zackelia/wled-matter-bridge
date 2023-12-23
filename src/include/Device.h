@@ -77,19 +77,19 @@ public:
 
     DeviceOnOff(const char * szDeviceName, std::string szLocation);
 
-    bool IsOn();
-    void SetOnOff(bool aOn);
-    void Toggle();
+    virtual bool IsOn();
+    virtual void SetOnOff(bool aOn);
+    virtual void Toggle();
 
     using DeviceCallback_fn = std::function<void(DeviceOnOff *, DeviceOnOff::Changed_t)>;
     void SetChangeCallback(DeviceCallback_fn aChanged_CB);
 
 private:
     void HandleDeviceChange(Device * device, Device::Changed_t changeMask);
-
-private:
-    bool mOn;
     DeviceCallback_fn mChanged_CB;
+
+protected:
+    bool mOn;
 };
 
 class EndpointListInfo

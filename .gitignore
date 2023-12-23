@@ -34,3 +34,5 @@
 build/
 .cache/
 out/
+# TODO: Remove once mDNS is done
+**/private.h
