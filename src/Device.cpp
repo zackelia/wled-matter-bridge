@@ -1,5 +1,6 @@
 /*
  *
+ *    Copyright (c) 2023 Zack Elia
  *    Copyright (c) 2021-2022 Project CHIP Authors
  *    Copyright (c) 2019 Google LLC.
  *    All rights reserved.
