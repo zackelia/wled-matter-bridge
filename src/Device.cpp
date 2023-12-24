@@ -130,6 +130,43 @@ void DeviceOnOff::HandleDeviceChange(Device * device, Device::Changed_t changeMa
     }
 }
 
+DeviceDimmable::DeviceDimmable(const char * szDeviceName, std::string szLocation) : DeviceOnOff(szDeviceName, szLocation)
+{
+    mLevel = 0;
+}
+
+uint8_t DeviceDimmable::Level()
+{
+    return mLevel;
+}
+
+void DeviceDimmable::SetLevel(uint8_t aLevel)
+{
+    bool changed;
+
+    changed = aLevel ^ mLevel;
+    mLevel  = aLevel;
+    ChipLogProgress(DeviceLayer, "Device[%s]: Level %d", mName, aLevel);
+
+    if ((changed) && (mChanged_CB))
+    {
+        mChanged_CB(this, kChanged_Level);
+    }
+}
+
+void DeviceDimmable::SetChangeCallback(DeviceCallback_fn aChanged_CB)
+{
+    mChanged_CB = aChanged_CB;
+}
+
+void DeviceDimmable::HandleDeviceChange(Device * device, Device::Changed_t changeMask)
+{
+    if (mChanged_CB)
+    {
+        mChanged_CB(this, (DeviceDimmable::Changed_t) changeMask);
+    }
+}
+
 EndpointListInfo::EndpointListInfo(uint16_t endpointListId, std::string name, EndpointListTypeEnum type)
 {
     mEndpointListId = endpointListId;

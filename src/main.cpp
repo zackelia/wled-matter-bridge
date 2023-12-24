@@ -21,6 +21,7 @@
 #include <platform/CHIPDeviceLayer.h>
 #include <platform/PlatformManager.h>
 
+#include <app-common/zap-generated/callback.h>
 #include <app-common/zap-generated/ids/Attributes.h>
 #include <app-common/zap-generated/ids/Clusters.h>
 #include <app/ConcreteAttributePath.h>
@@ -94,6 +95,7 @@ std::vector<Action *> gActions;
 #define DEVICE_TYPE_BRIDGED_NODE 0x0013
 // (taken from lo-devices.xml)
 #define DEVICE_TYPE_LO_ON_OFF_LIGHT 0x0100
+#define DEVICE_TYPE_LO_DIMMABLE_LIGHT 0x0101
 
 // Device Version for dynamic endpoints:
 #define DEVICE_VERSION_DEFAULT 1
@@ -102,6 +104,7 @@ std::vector<Action *> gActions;
 //
 // LIGHT ENDPOINT: contains the following clusters:
 //   - On/Off
+//   - Level Control
 //   - Descriptor
 //   - Bridged Device Basic Information
 
@@ -109,6 +112,19 @@ std::vector<Action *> gActions;
 DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(onOffAttrs)
 DECLARE_DYNAMIC_ATTRIBUTE(OnOff::Attributes::OnOff::Id, BOOLEAN, 1, 0), /* on/off */
     DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
+
+// Declare Light Control cluster attributes
+DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(levelControlAttrs)
+DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::CurrentLevel::Id, INT8U, 1, ZAP_ATTRIBUTE_MASK(NULLABLE)),
+    DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::RemainingTime::Id, INT16U, 2, 0),
+    DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::MinLevel::Id, INT8U, 1, 0),
+    // TODO: Spec says this is mandatory but it doesn't seem to be?
+    // DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::OnLevel::Id, INT8U, 1,
+    //                           ZAP_ATTRIBUTE_MASK(WRITABLE) | ZAP_ATTRIBUTE_MASK(NULLABLE)),
+    DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::Options::Id, BITMAP8, 1, ZAP_ATTRIBUTE_MASK(WRITABLE)),
+    DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::StartUpCurrentLevel::Id, INT8U, 1, ZAP_ATTRIBUTE_MASK(WRITABLE)),
+    DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::ClusterRevision::Id, INT16U, 2, 0),
+    DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::FeatureMap::Id, BITMAP32, 4, 0), DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
 
 // Declare Descriptor cluster attributes
 DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(descriptorAttrs)
@@ -138,8 +154,21 @@ constexpr CommandId onOffIncomingCommands[] = {
     kInvalidCommandId,
 };
 
+constexpr CommandId levelControlIncomingCommands[] = {
+    app::Clusters::LevelControl::Commands::MoveToLevel::Id,
+    app::Clusters::LevelControl::Commands::Move::Id,
+    app::Clusters::LevelControl::Commands::Step::Id,
+    app::Clusters::LevelControl::Commands::Stop::Id,
+    app::Clusters::LevelControl::Commands::MoveToLevelWithOnOff::Id,
+    app::Clusters::LevelControl::Commands::MoveWithOnOff::Id,
+    app::Clusters::LevelControl::Commands::StepWithOnOff::Id,
+    app::Clusters::LevelControl::Commands::StopWithOnOff::Id,
+    kInvalidCommandId,
+};
+
 DECLARE_DYNAMIC_CLUSTER_LIST_BEGIN(bridgedLightClusters)
 DECLARE_DYNAMIC_CLUSTER(OnOff::Id, onOffAttrs, onOffIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(LevelControl::Id, levelControlAttrs, levelControlIncomingCommands, nullptr),
     DECLARE_DYNAMIC_CLUSTER(Descriptor::Id, descriptorAttrs, nullptr, nullptr),
     DECLARE_DYNAMIC_CLUSTER(BridgedDeviceBasicInformation::Id, bridgedDeviceBasicAttrs, nullptr,
                             nullptr) DECLARE_DYNAMIC_CLUSTER_LIST_END;
@@ -159,14 +188,12 @@ Action action1(0x1001, "Room 1 On", Actions::ActionTypeEnum::kAutomation, 0xE001
 // REVISION DEFINITIONS:
 // =================================================================================
 
-#define ZCL_DESCRIPTOR_CLUSTER_REVISION (1u)
 #define ZCL_BRIDGED_DEVICE_BASIC_INFORMATION_CLUSTER_REVISION (2u)
 #define ZCL_BRIDGED_DEVICE_BASIC_INFORMATION_FEATURE_MAP (0u)
-#define ZCL_FIXED_LABEL_CLUSTER_REVISION (1u)
 #define ZCL_ON_OFF_CLUSTER_REVISION (4u)
-#define ZCL_TEMPERATURE_SENSOR_CLUSTER_REVISION (1u)
-#define ZCL_TEMPERATURE_SENSOR_FEATURE_MAP (0u)
-#define ZCL_POWER_SOURCE_CLUSTER_REVISION (2u)
+#define ZCL_LEVEL_CONTROL_CLUSTER_REVISION (5u)
+#define ZCL_LEVEL_CONTROL_FEATURE_MAP (3u)
+#define ZCL_LEVEL_CONTROL_OPTIONS (1u)
 
 // ---------------------------------------------------------------------------
 
@@ -192,6 +219,9 @@ int AddDeviceEndpoint(Device * dev, EmberAfEndpointType * ep, const Span<const E
                 {
                     ChipLogProgress(DeviceLayer, "Added device %s to dynamic endpoint %d (index=%d)", dev->GetName(),
                                     gCurrentEndpointId, index);
+                    // TODO: This won't work for every device! Does that matter?
+                    // Seems to be tracked here: https://github.com/orgs/project-chip/projects/85
+                    emberAfLevelControlClusterServerInitCallback(dev->GetEndpointId());
                     return index;
                 }
                 if (ret != EMBER_ZCL_STATUS_DUPLICATE_EXISTS)
@@ -319,6 +349,16 @@ void HandleDeviceOnOffStatusChanged(DeviceOnOff * dev, DeviceOnOff::Changed_t it
     }
 }
 
+void HandleDeviceDimmableStatusChanged(DeviceDimmable * dev, DeviceDimmable::Changed_t itemChangedMask)
+{
+    HandleDeviceOnOffStatusChanged(static_cast<DeviceOnOff *>(dev), (DeviceOnOff::Changed_t) itemChangedMask);
+
+    if (itemChangedMask & DeviceDimmable::kChanged_Level)
+    {
+        ScheduleReportingCallback(dev, LevelControl::Id, LevelControl::Attributes::CurrentLevel::Id);
+    }
+}
+
 EmberAfStatus HandleReadBridgedDeviceBasicAttribute(Device * dev, chip::AttributeId attributeId, uint8_t * buffer,
                                                     uint16_t maxReadLength)
 {
@@ -360,14 +400,74 @@ EmberAfStatus HandleReadOnOffAttribute(DeviceOnOff * dev, chip::AttributeId attr
     if ((attributeId == OnOff::Attributes::OnOff::Id) && (maxReadLength == 1))
     {
         *buffer = dev->IsOn() ? 1 : 0;
+        ChipLogProgress(DeviceLayer, "OnOff::Attributes::OnOff: %d", *buffer);
     }
     else if ((attributeId == OnOff::Attributes::ClusterRevision::Id) && (maxReadLength == 2))
     {
         uint16_t rev = ZCL_ON_OFF_CLUSTER_REVISION;
         memcpy(buffer, &rev, sizeof(rev));
+        ChipLogProgress(DeviceLayer, "OnOff::ClusterRevision::OnOff: %d", rev);
     }
     else
     {
+        ChipLogError(DeviceLayer,
+                     "Unhandled "
+                     "attribute!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+                     "!!!!!!!!!!!!!!!!!!!!");
+        return EMBER_ZCL_STATUS_FAILURE;
+    }
+
+    return EMBER_ZCL_STATUS_SUCCESS;
+}
+
+EmberAfStatus HandleReadLevelControlAttribute(DeviceDimmable * dev, chip::AttributeId attributeId, uint8_t * buffer,
+                                              uint16_t maxReadLength)
+{
+    ChipLogProgress(DeviceLayer, "HandleReadLevelControlAttribute: attrId=%d, maxReadLength=%d", attributeId, maxReadLength);
+
+    if ((attributeId == LevelControl::Attributes::CurrentLevel::Id) && (maxReadLength == 1))
+    {
+        *buffer = dev->Level();
+        ChipLogProgress(DeviceLayer, "LevelControl::Attributes::CurrentLevel: %d", *buffer);
+    }
+    else if ((attributeId == LevelControl::Attributes::RemainingTime::Id) && (maxReadLength == 2))
+    {
+        *(uint16_t *) buffer = 0;
+        ChipLogProgress(DeviceLayer, "LevelControl::Attributes::RemainingTime: %d", *buffer);
+    }
+    else if ((attributeId == LevelControl::Attributes::MinLevel::Id) && (maxReadLength == 1))
+    {
+        *buffer = 0;
+        ChipLogProgress(DeviceLayer, "LevelControl::Attributes::MinLevel: %d", *buffer);
+    }
+    else if ((attributeId == LevelControl::Attributes::Options::Id) && (maxReadLength == 1))
+    {
+        *buffer = ZCL_LEVEL_CONTROL_OPTIONS;
+        ChipLogProgress(DeviceLayer, "LevelControl::Attributes::Options: %d", *buffer);
+    }
+    else if ((attributeId == LevelControl::Attributes::StartUpCurrentLevel::Id) && (maxReadLength == 1))
+    {
+        *buffer = dev->Level();
+        ChipLogProgress(DeviceLayer, "LevelControl::Attributes::StartUpCurrentLevel: %d", *buffer);
+    }
+    else if ((attributeId == LevelControl::Attributes::ClusterRevision::Id) && (maxReadLength == 2))
+    {
+        uint16_t rev = ZCL_LEVEL_CONTROL_CLUSTER_REVISION;
+        memcpy(buffer, &rev, sizeof(rev));
+        ChipLogProgress(DeviceLayer, "LevelControl::Attributes::ClusterRevision: %d", *buffer);
+    }
+    else if ((attributeId == LevelControl::Attributes::FeatureMap::Id) && (maxReadLength == 4))
+    {
+        uint32_t featureMap = ZCL_LEVEL_CONTROL_FEATURE_MAP;
+        memcpy(buffer, &featureMap, sizeof(featureMap));
+        ChipLogProgress(DeviceLayer, "LevelControl::Attributes::FeatureMap: %d", *buffer);
+    }
+    else
+    {
+        ChipLogError(DeviceLayer,
+                     "Unhandled "
+                     "attribute!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+                     "!!!!!!!!!!!!!!!!!!!!");
         return EMBER_ZCL_STATUS_FAILURE;
     }
 
@@ -388,9 +488,41 @@ EmberAfStatus HandleWriteOnOffAttribute(DeviceOnOff * dev, chip::AttributeId att
         {
             dev->SetOnOff(false);
         }
+        ChipLogProgress(DeviceLayer, "OnOff::Attributes::OnOff: %d", *buffer);
     }
     else
     {
+        ChipLogError(DeviceLayer,
+                     "Unhandled "
+                     "attribute!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+                     "!!!!!!!!!!!!!!!!!!!!");
+        return EMBER_ZCL_STATUS_FAILURE;
+    }
+
+    return EMBER_ZCL_STATUS_SUCCESS;
+}
+
+EmberAfStatus HandleWriteLevelControlAttribute(DeviceDimmable * dev, chip::AttributeId attributeId, uint8_t * buffer)
+{
+    ChipLogProgress(DeviceLayer, "HandleWriteLevelControlAttribute: attrId=%d", attributeId);
+
+    if ((attributeId == LevelControl::Attributes::CurrentLevel::Id) && (dev->IsReachable()))
+    {
+        dev->SetLevel(*buffer);
+        ChipLogProgress(DeviceLayer, "LevelControl::Attributes::CurrentLevel: %d", *buffer);
+        ChipLogProgress(DeviceLayer, "Retrieved CurrentLevel is:              %d", dev->Level());
+    }
+    else if ((attributeId == LevelControl::Attributes::RemainingTime::Id) && (dev->IsReachable()))
+    {
+        // TODO: This should not be writable???? Why is this getting called????
+        ChipLogProgress(DeviceLayer, "LevelControl::Attributes::RemainingTime: %d", *buffer);
+    }
+    else
+    {
+        ChipLogError(DeviceLayer,
+                     "Unhandled "
+                     "attribute!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+                     "!!!!!!!!!!!!!!!!!!!!");
         return EMBER_ZCL_STATUS_FAILURE;
     }
 
@@ -417,6 +549,11 @@ EmberAfStatus emberAfExternalAttributeReadCallback(EndpointId endpoint, ClusterI
         {
             ret = HandleReadOnOffAttribute(static_cast<DeviceOnOff *>(dev), attributeMetadata->attributeId, buffer, maxReadLength);
         }
+        else if (clusterId == LevelControl::Id)
+        {
+            ret = HandleReadLevelControlAttribute(static_cast<DeviceDimmable *>(dev), attributeMetadata->attributeId, buffer,
+                                                  maxReadLength);
+        }
         else
         {
             ChipLogError(DeviceLayer, "Unknown cluster ID: %d\n", clusterId);
@@ -437,9 +574,18 @@ EmberAfStatus emberAfExternalAttributeWriteCallback(EndpointId endpoint, Cluster
     {
         Device * dev = gDevices[endpointIndex];
 
-        if ((dev->IsReachable()) && (clusterId == OnOff::Id))
+        if (!dev->IsReachable())
+        {
+            return ret;
+        }
+
+        if (clusterId == OnOff::Id)
         {
             ret = HandleWriteOnOffAttribute(static_cast<DeviceOnOff *>(dev), attributeMetadata->attributeId, buffer);
+        }
+        if (clusterId == LevelControl::Id)
+        {
+            ret = HandleWriteLevelControlAttribute(static_cast<DeviceDimmable *>(dev), attributeMetadata->attributeId, buffer);
         }
     }
 
@@ -489,8 +635,8 @@ bool emberAfActionsClusterInstantActionCallback(app::CommandHandler * commandObj
     return true;
 }
 
-const EmberAfDeviceType gBridgedOnOffDeviceTypes[] = { { DEVICE_TYPE_LO_ON_OFF_LIGHT, DEVICE_VERSION_DEFAULT },
-                                                       { DEVICE_TYPE_BRIDGED_NODE, DEVICE_VERSION_DEFAULT } };
+const EmberAfDeviceType gBridgedDimmableDeviceTypes[] = { { DEVICE_TYPE_LO_DIMMABLE_LIGHT, DEVICE_VERSION_DEFAULT },
+                                                          { DEVICE_TYPE_BRIDGED_NODE, DEVICE_VERSION_DEFAULT } };
 
 #define POLL_INTERVAL_MS (100)
 uint8_t poll_prescale = 0;
@@ -527,13 +673,13 @@ void * bridge_polling_thread(void * context)
             {
                 auto light = new WLED(WLED_IP, "Zack's Desk", "Office");
                 light->SetReachable(true);
-                light->SetChangeCallback(&HandleDeviceOnOffStatusChanged);
+                light->SetChangeCallback(&HandleDeviceDimmableStatusChanged);
                 gLights.push_back(light);
                 gDataVersions.push_back({ 0 });
 
                 // TC-BR-2 step 5, Add Light 1 back
                 AddDeviceEndpoint(gLights.at(num_lights), &bridgedLightEndpoint,
-                                  Span<const EmberAfDeviceType>(gBridgedOnOffDeviceTypes),
+                                  Span<const EmberAfDeviceType>(gBridgedDimmableDeviceTypes),
                                   Span<DataVersion>(gDataVersions.at(num_lights)), 1);
                 num_lights++;
             }

@@ -34,10 +34,10 @@
 #define SUPPORTS_WHITE_CHANNEL(x) BIT_SET(x, 1)
 #define SUPPORTS_COLOR_TEMPERATURE(x) BIT_SET(x, 2)
 
-class WLED : public DeviceOnOff
+class WLED : public DeviceDimmable
 {
 public:
-    WLED(std::string_view ip, const char * szDeviceName, std::string szLocation) noexcept : DeviceOnOff(szDeviceName, szLocation)
+    WLED(std::string_view ip, const char * szDeviceName, std::string szLocation) noexcept : DeviceDimmable(szDeviceName, szLocation)
     {
         curl = curl_easy_init();
         if (!curl)
@@ -140,17 +140,32 @@ public:
     }
 
     bool IsOn() override { return on(); }
-    void SetOnOff(bool aOn) override { set_on(aOn); }
+    void SetOnOff(bool aOn) override
+    {
+        set_on(aOn);
+        DeviceOnOff::SetOnOff(aOn);
+    }
 
-    [[nodiscard]] int brightness() const noexcept { return led_state.brightness; }
+    uint8_t Level() override { return brightness(); }
+    void SetLevel(uint8_t aLevel) override
+    {
+        set_brightness(aLevel);
+        DeviceDimmable::SetLevel(aLevel);
+    }
+
+    [[nodiscard]] uint8_t brightness() const noexcept { return led_state.brightness; }
 
     [[nodiscard]] bool on() const noexcept { return led_state.on; }
 
-    void set_brightness(int brightness) noexcept
+    void set_brightness(uint8_t brightness) noexcept
     {
         cJSON * json = cJSON_CreateObject();
+        // Matter sets brightness after setting a light to off. WLED will interpret this as turning the light back on which is
+        // unintended. Send the `on` state at the same time to prevent this.
+        cJSON_AddBoolToObject(json, "on", on());
         cJSON_AddNumberToObject(json, "bri", brightness);
         send(cJSON_PrintUnformatted(json));
+        led_state.brightness = brightness;
     }
 
     void set_on(bool on) noexcept
@@ -181,7 +196,7 @@ public:
         cJSON * bri = cJSON_GetObjectItemCaseSensitive(state, "bri");
 
         led_state.on         = cJSON_IsTrue(on);
-        led_state.brightness = bri->valueint;
+        led_state.brightness = (uint8_t) bri->valueint;
 
         cJSON * info = cJSON_GetObjectItemCaseSensitive(json, "info");
         cJSON * leds = cJSON_GetObjectItemCaseSensitive(info, "leds");
@@ -223,7 +238,7 @@ private:
     struct led_state
     {
         bool on;
-        int brightness;
+        uint8_t brightness;
         int capabilities;
     };
 
