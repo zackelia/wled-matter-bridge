@@ -33,11 +33,11 @@ executable("chip-bridge-app") {
     "${chip_root}/examples/bridge-app/bridge-common",
     "${chip_root}/examples/platform/linux:app-main",
     "${chip_root}/src/lib",
+    "${chip_root}/third_party/jsoncpp"
   ]
 
   libs = [
     "cmake-build/third_party/curl/lib/libcurl-d.a",
-    "cmake-build/third_party/cJSON/libcjson.a",
     "z"
   ]
 
@@ -46,7 +46,6 @@ executable("chip-bridge-app") {
   include_dirs = [ 
     "include",
     "third_party/curl/include/",
-    "third_party/cJSON/"
   ]
 
   output_dir = root_out_dir

@@ -24,8 +24,8 @@
 #include <sys/select.h>
 #include <utility>
 
-#include <cJSON.h>
 #include <curl/curl.h>
+#include <json/json.h>
 
 #include "Device.h"
 
@@ -159,20 +159,20 @@ public:
 
     void set_brightness(uint8_t brightness) noexcept
     {
-        cJSON * json = cJSON_CreateObject();
+        Json::Value root;
         // Matter sets brightness after setting a light to off. WLED will interpret this as turning the light back on which is
         // unintended. Send the `on` state at the same time to prevent this.
-        cJSON_AddBoolToObject(json, "on", on());
-        cJSON_AddNumberToObject(json, "bri", brightness);
-        send(cJSON_PrintUnformatted(json));
+        root["on"]  = on();
+        root["bri"] = brightness;
+        send(writer.write(root));
         led_state.brightness = brightness;
     }
 
     void set_on(bool on) noexcept
     {
-        cJSON * json = cJSON_CreateObject();
-        cJSON_AddBoolToObject(json, "on", on);
-        send(cJSON_PrintUnformatted(json));
+        Json::Value root;
+        root["on"] = on;
+        send(writer.write(root));
         led_state.on = on;
     }
 
@@ -189,27 +189,20 @@ public:
             return result;
         }
 
-        cJSON * json  = cJSON_ParseWithLength(buffer, rlen);
-        cJSON * state = cJSON_GetObjectItemCaseSensitive(json, "state");
+        Json::Value root;
+        if (reader.parse(buffer, root) == false)
+        {
+            std::cerr << "reader.parse: failed to parse" << std::endl;
+            return -1;
+        }
 
-        cJSON * on  = cJSON_GetObjectItemCaseSensitive(state, "on");
-        cJSON * bri = cJSON_GetObjectItemCaseSensitive(state, "bri");
-
-        led_state.on         = cJSON_IsTrue(on);
-        led_state.brightness = (uint8_t) bri->valueint;
-
-        cJSON * info = cJSON_GetObjectItemCaseSensitive(json, "info");
-        cJSON * leds = cJSON_GetObjectItemCaseSensitive(info, "leds");
-        cJSON * lc   = cJSON_GetObjectItemCaseSensitive(leds, "lc");
-
-        led_state.capabilities = lc->valueint;
+        led_state.on           = root["state"]["on"].asBool();
+        led_state.brightness   = static_cast<uint8_t>(root["state"]["bri"].asUInt());
+        led_state.capabilities = root["info"]["leds"]["lc"].asInt();
 
         std::cout << "RGB Support: " << SUPPORTS_RGB(led_state.capabilities) << std::endl;
         std::cout << "White Support: " << SUPPORTS_WHITE_CHANNEL(led_state.capabilities) << std::endl;
         std::cout << "Color temp Support: " << SUPPORTS_COLOR_TEMPERATURE(led_state.capabilities) << std::endl;
-
-        // char * string = cJSON_Print(state);
-        // std::cout << string << std::endl;
 
         return 0;
     }
@@ -244,6 +237,9 @@ private:
 
     CURL * curl;
     led_state led_state;
+
+    Json::Reader reader;
+    Json::FastWriter writer;
 
     static constexpr int MAX_WEBSOCKET_BYTES = 1450;
 };
