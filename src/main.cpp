@@ -371,6 +371,17 @@ void HandleDeviceDimmableStatusChanged(DeviceDimmable * dev, DeviceDimmable::Cha
     }
 }
 
+void unhandled_attribute()
+{
+    ChipLogError(DeviceLayer,
+                 "Unhandled "
+                 "attribute!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+                 "!!!!!!!!!!!!!!!!!!!!");
+#if ABORT_ON_UNHANDLED_ATTRIBUTE
+    chipAbort();
+#endif
+}
+
 EmberAfStatus HandleReadBridgedDeviceBasicAttribute(Device * dev, chip::AttributeId attributeId, uint8_t * buffer,
                                                     uint16_t maxReadLength)
 {
@@ -399,6 +410,7 @@ EmberAfStatus HandleReadBridgedDeviceBasicAttribute(Device * dev, chip::Attribut
     }
     else
     {
+        unhandled_attribute();
         return EMBER_ZCL_STATUS_FAILURE;
     }
 
@@ -428,10 +440,7 @@ EmberAfStatus HandleReadIdentifyAttribute(Device * dev, chip::AttributeId attrib
     }
     else
     {
-        ChipLogError(DeviceLayer,
-                     "Unhandled "
-                     "attribute!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-                     "!!!!!!!!!!!!!!!!!!!!");
+        unhandled_attribute();
         return EMBER_ZCL_STATUS_FAILURE;
     }
     return EMBER_ZCL_STATUS_SUCCESS;
@@ -454,10 +463,7 @@ EmberAfStatus HandleReadOnOffAttribute(DeviceOnOff * dev, chip::AttributeId attr
     }
     else
     {
-        ChipLogError(DeviceLayer,
-                     "Unhandled "
-                     "attribute!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-                     "!!!!!!!!!!!!!!!!!!!!");
+        unhandled_attribute();
         return EMBER_ZCL_STATUS_FAILURE;
     }
 
@@ -508,10 +514,7 @@ EmberAfStatus HandleReadLevelControlAttribute(DeviceDimmable * dev, chip::Attrib
     }
     else
     {
-        ChipLogError(DeviceLayer,
-                     "Unhandled "
-                     "attribute!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-                     "!!!!!!!!!!!!!!!!!!!!");
+        unhandled_attribute();
         return EMBER_ZCL_STATUS_FAILURE;
     }
 
@@ -529,10 +532,7 @@ EmberAfStatus HandleWriteIdentifyAttribute(Device * dev, chip::AttributeId attri
     }
     else
     {
-        ChipLogError(DeviceLayer,
-                     "Unhandled "
-                     "attribute!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-                     "!!!!!!!!!!!!!!!!!!!!");
+        unhandled_attribute();
         return EMBER_ZCL_STATUS_FAILURE;
     }
 
@@ -557,10 +557,7 @@ EmberAfStatus HandleWriteOnOffAttribute(DeviceOnOff * dev, chip::AttributeId att
     }
     else
     {
-        ChipLogError(DeviceLayer,
-                     "Unhandled "
-                     "attribute!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-                     "!!!!!!!!!!!!!!!!!!!!");
+        unhandled_attribute();
         return EMBER_ZCL_STATUS_FAILURE;
     }
 
@@ -575,7 +572,6 @@ EmberAfStatus HandleWriteLevelControlAttribute(DeviceDimmable * dev, chip::Attri
     {
         dev->SetLevel(*buffer);
         ChipLogProgress(DeviceLayer, "LevelControl::Attributes::CurrentLevel: %d", *buffer);
-        ChipLogProgress(DeviceLayer, "Retrieved CurrentLevel is:              %d", dev->Level());
     }
     else if ((attributeId == LevelControl::Attributes::RemainingTime::Id) && (dev->IsReachable()))
     {
@@ -584,10 +580,7 @@ EmberAfStatus HandleWriteLevelControlAttribute(DeviceDimmable * dev, chip::Attri
     }
     else
     {
-        ChipLogError(DeviceLayer,
-                     "Unhandled "
-                     "attribute!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-                     "!!!!!!!!!!!!!!!!!!!!");
+        unhandled_attribute();
         return EMBER_ZCL_STATUS_FAILURE;
     }
 
