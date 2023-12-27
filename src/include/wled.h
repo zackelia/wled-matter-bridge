@@ -172,6 +172,7 @@ public:
     {
         Json::Value root;
         root["on"] = on;
+        root["tt"] = 1;
         send(writer.write(root));
         led_state.on = on;
     }

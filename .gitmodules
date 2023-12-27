@@ -4,3 +4,6 @@
 [submodule "third_party/curl"]
 	path = third_party/curl
 	url = https://github.com/curl/curl
+[submodule "third_party/jthread"]
+	path = third_party/jthread
+	url = https://github.com/josuttis/jthread

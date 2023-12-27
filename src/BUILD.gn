@@ -46,6 +46,7 @@ executable("chip-bridge-app") {
   include_dirs = [ 
     "include",
     "third_party/curl/include/",
+    "third_party/jthread/source/",
   ]
 
   output_dir = root_out_dir

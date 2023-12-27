@@ -103,10 +103,16 @@ std::vector<Action *> gActions;
 // ---------------------------------------------------------------------------
 //
 // LIGHT ENDPOINT: contains the following clusters:
+//   - Identify
 //   - On/Off
 //   - Level Control
 //   - Descriptor
 //   - Bridged Device Basic Information
+
+// Declare Identify cluster attributes
+DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(identifyAttrs)
+DECLARE_DYNAMIC_ATTRIBUTE(Identify::Attributes::IdentifyTime::Id, INT16U, 2, ZAP_ATTRIBUTE_MASK(WRITABLE)),
+    DECLARE_DYNAMIC_ATTRIBUTE(Identify::Attributes::IdentifyType::Id, BITMAP8, 1, 0), DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
 
 // Declare On/Off cluster attributes
 DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(onOffAttrs)
@@ -144,6 +150,10 @@ DECLARE_DYNAMIC_ATTRIBUTE(BridgedDeviceBasicInformation::Attributes::NodeLabel::
 // Declare Cluster List for Bridged Light endpoint
 // TODO: It's not clear whether it would be better to get the command lists from
 // the ZAP config on our last fixed endpoint instead.
+constexpr CommandId identifyIncomingCommands[] = {
+    app::Clusters::Identify::Commands::Identify::Id,
+};
+
 constexpr CommandId onOffIncomingCommands[] = {
     app::Clusters::OnOff::Commands::Off::Id,
     app::Clusters::OnOff::Commands::On::Id,
@@ -167,7 +177,8 @@ constexpr CommandId levelControlIncomingCommands[] = {
 };
 
 DECLARE_DYNAMIC_CLUSTER_LIST_BEGIN(bridgedLightClusters)
-DECLARE_DYNAMIC_CLUSTER(OnOff::Id, onOffAttrs, onOffIncomingCommands, nullptr),
+DECLARE_DYNAMIC_CLUSTER(Identify::Id, identifyAttrs, identifyIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(OnOff::Id, onOffAttrs, onOffIncomingCommands, nullptr),
     DECLARE_DYNAMIC_CLUSTER(LevelControl::Id, levelControlAttrs, levelControlIncomingCommands, nullptr),
     DECLARE_DYNAMIC_CLUSTER(Descriptor::Id, descriptorAttrs, nullptr, nullptr),
     DECLARE_DYNAMIC_CLUSTER(BridgedDeviceBasicInformation::Id, bridgedDeviceBasicAttrs, nullptr,
@@ -190,6 +201,7 @@ Action action1(0x1001, "Room 1 On", Actions::ActionTypeEnum::kAutomation, 0xE001
 
 #define ZCL_BRIDGED_DEVICE_BASIC_INFORMATION_CLUSTER_REVISION (2u)
 #define ZCL_BRIDGED_DEVICE_BASIC_INFORMATION_FEATURE_MAP (0u)
+#define ZCL_IDENTIFY_CLUSTER_REVISION (4u)
 #define ZCL_ON_OFF_CLUSTER_REVISION (4u)
 #define ZCL_LEVEL_CONTROL_CLUSTER_REVISION (5u)
 #define ZCL_LEVEL_CONTROL_FEATURE_MAP (3u)
@@ -393,6 +405,38 @@ EmberAfStatus HandleReadBridgedDeviceBasicAttribute(Device * dev, chip::Attribut
     return EMBER_ZCL_STATUS_SUCCESS;
 }
 
+EmberAfStatus HandleReadIdentifyAttribute(Device * dev, chip::AttributeId attributeId, uint8_t * buffer, uint16_t maxReadLength)
+{
+    ChipLogProgress(DeviceLayer, "HandleReadIdentifyAttribute: attrId=%d, maxReadLength=%d", attributeId, maxReadLength);
+
+    if ((attributeId == Identify::Attributes::IdentifyTime::Id) && (maxReadLength == 2))
+    {
+        uint16_t time = dev->IdentifyTime();
+        memcpy(buffer, &time, 2);
+        ChipLogProgress(DeviceLayer, "Identify::Attributes::IdentifyTime: %d", time);
+    }
+    else if ((attributeId == Identify::Attributes::IdentifyType::Id) && (maxReadLength == 1))
+    {
+        *buffer = (uint8_t) Identify::IdentifyTypeEnum::kLightOutput;
+        ChipLogProgress(DeviceLayer, "Identify::Attributes::IdentifyTypeEnum: %d", *buffer);
+    }
+    else if ((attributeId == Identify::Attributes::ClusterRevision::Id) && (maxReadLength == 2))
+    {
+        uint16_t rev = ZCL_IDENTIFY_CLUSTER_REVISION;
+        memcpy(buffer, &rev, 2);
+        ChipLogProgress(DeviceLayer, "Identify::Attributes::ClusterRevision: %d", rev);
+    }
+    else
+    {
+        ChipLogError(DeviceLayer,
+                     "Unhandled "
+                     "attribute!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+                     "!!!!!!!!!!!!!!!!!!!!");
+        return EMBER_ZCL_STATUS_FAILURE;
+    }
+    return EMBER_ZCL_STATUS_SUCCESS;
+}
+
 EmberAfStatus HandleReadOnOffAttribute(DeviceOnOff * dev, chip::AttributeId attributeId, uint8_t * buffer, uint16_t maxReadLength)
 {
     ChipLogProgress(DeviceLayer, "HandleReadOnOffAttribute: attrId=%d, maxReadLength=%d", attributeId, maxReadLength);
@@ -461,6 +505,27 @@ EmberAfStatus HandleReadLevelControlAttribute(DeviceDimmable * dev, chip::Attrib
         uint32_t featureMap = ZCL_LEVEL_CONTROL_FEATURE_MAP;
         memcpy(buffer, &featureMap, sizeof(featureMap));
         ChipLogProgress(DeviceLayer, "LevelControl::Attributes::FeatureMap: %d", *buffer);
+    }
+    else
+    {
+        ChipLogError(DeviceLayer,
+                     "Unhandled "
+                     "attribute!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+                     "!!!!!!!!!!!!!!!!!!!!");
+        return EMBER_ZCL_STATUS_FAILURE;
+    }
+
+    return EMBER_ZCL_STATUS_SUCCESS;
+}
+
+EmberAfStatus HandleWriteIdentifyAttribute(Device * dev, chip::AttributeId attributeId, uint8_t * buffer)
+{
+    ChipLogProgress(DeviceLayer, "HandleWriteIdentifyAttribute: attrId=%d", attributeId);
+    if ((attributeId == Identify::Attributes::IdentifyTime::Id) && (dev->IsReachable()))
+    {
+        uint16_t time = *(uint16_t *) buffer;
+        dev->Identify(time);
+        ChipLogProgress(DeviceLayer, "Identify::Attributes::Identify: %d", time);
     }
     else
     {
@@ -545,6 +610,10 @@ EmberAfStatus emberAfExternalAttributeReadCallback(EndpointId endpoint, ClusterI
         {
             ret = HandleReadBridgedDeviceBasicAttribute(dev, attributeMetadata->attributeId, buffer, maxReadLength);
         }
+        else if (clusterId == Identify::Id)
+        {
+            ret = HandleReadIdentifyAttribute(static_cast<Device *>(dev), attributeMetadata->attributeId, buffer, maxReadLength);
+        }
         else if (clusterId == OnOff::Id)
         {
             ret = HandleReadOnOffAttribute(static_cast<DeviceOnOff *>(dev), attributeMetadata->attributeId, buffer, maxReadLength);
@@ -579,6 +648,10 @@ EmberAfStatus emberAfExternalAttributeWriteCallback(EndpointId endpoint, Cluster
             return ret;
         }
 
+        if (clusterId == Identify::Id)
+        {
+            ret = HandleWriteIdentifyAttribute(static_cast<Device *>(dev), attributeMetadata->attributeId, buffer);
+        }
         if (clusterId == OnOff::Id)
         {
             ret = HandleWriteOnOffAttribute(static_cast<DeviceOnOff *>(dev), attributeMetadata->attributeId, buffer);
