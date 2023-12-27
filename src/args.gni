@@ -1,3 +1,4 @@
+# Copyright (c) 2023 Zack Elia
 # Copyright (c) 2021 Project CHIP Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,8 +21,7 @@ chip_device_project_config_include = "<CHIPProjectAppConfig.h>"
 chip_project_config_include = "<CHIPProjectAppConfig.h>"
 chip_system_project_config_include = "<SystemProjectConfig.h>"
 
-chip_project_config_include_dirs =
-    [ "${chip_root}/examples/bridge-app/bridge-common/include" ]
+chip_project_config_include_dirs = [ "//include" ]
 chip_project_config_include_dirs += [ "${chip_root}/config/standalone" ]
 
 matter_enable_tracing_support = true
