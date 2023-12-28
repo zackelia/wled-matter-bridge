@@ -98,6 +98,7 @@ std::vector<Action *> gActions;
 #define DEVICE_TYPE_LO_ON_OFF_LIGHT 0x0100
 #define DEVICE_TYPE_LO_DIMMABLE_LIGHT 0x0101
 #define DEVICE_TYPE_LO_COLOR_TEMPERATURE_LIGHT 0x010C
+#define DEVICE_TYPE_LO_EXTENDED_COLOR_LIGHT 0x010D
 
 // Device Version for dynamic endpoints:
 #define DEVICE_VERSION_DEFAULT 1
@@ -137,7 +138,9 @@ DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::CurrentLevel::Id, INT8U, 1, 
 
 // Declare Color Control cluster attributes
 DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(colorControlAttrs)
-DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::ColorTemperatureMireds::Id, INT16U, 2, 0),
+DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::CurrentHue::Id, INT8U, 1, 0),
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::CurrentSaturation::Id, INT8U, 1, 0),
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::ColorTemperatureMireds::Id, INT16U, 2, 0),
     DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::ColorMode::Id, ENUM8, 1, 0),
     DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::Options::Id, BITMAP8, 1, ZAP_ATTRIBUTE_MASK(WRITABLE)),
     DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::EnhancedColorMode::Id, ENUM8, 1, 0),
@@ -196,6 +199,13 @@ constexpr CommandId levelControlIncomingCommands[] = {
 };
 
 constexpr CommandId colorControlIncomingCommands[] = {
+    app::Clusters::ColorControl::Commands::MoveToHue::Id,
+    app::Clusters::ColorControl::Commands::MoveHue::Id,
+    app::Clusters::ColorControl::Commands::StepHue::Id,
+    app::Clusters::ColorControl::Commands::MoveToSaturation::Id,
+    app::Clusters::ColorControl::Commands::MoveSaturation::Id,
+    app::Clusters::ColorControl::Commands::StepSaturation::Id,
+    app::Clusters::ColorControl::Commands::MoveToHueAndSaturation::Id,
     app::Clusters::ColorControl::Commands::MoveToColorTemperature::Id,
     app::Clusters::ColorControl::Commands::StopMoveStep::Id,
     app::Clusters::ColorControl::Commands::MoveColorTemperature::Id,
@@ -414,6 +424,22 @@ void HandleDeviceColorTemperatureStatusChanged(DeviceColorTemperature * dev, Dev
     }
 }
 
+void HandleDeviceExtendedColorStatusChanged(DeviceExtendedColor * dev, DeviceExtendedColor::Changed_t itemChangedMask)
+{
+    HandleDeviceColorTemperatureStatusChanged(static_cast<DeviceColorTemperature *>(dev),
+                                              (DeviceColorTemperature::Changed_t) itemChangedMask);
+
+    if (itemChangedMask & DeviceExtendedColor::kChanged_Hue)
+    {
+        ScheduleReportingCallback(dev, ColorControl::Id, ColorControl::Attributes::CurrentHue::Id);
+    }
+
+    if (itemChangedMask & DeviceExtendedColor::kChanged_Saturation)
+    {
+        ScheduleReportingCallback(dev, ColorControl::Id, ColorControl::Attributes::CurrentSaturation::Id);
+    }
+}
+
 void unhandled_attribute()
 {
     ChipLogError(DeviceLayer,
@@ -583,7 +609,17 @@ EmberAfStatus HandleReadColorControlAttribute(DeviceColorTemperature * dev, chip
                                               uint16_t maxReadLength)
 {
     ChipLogProgress(DeviceLayer, "HandleReadColorControlAttribute: attrId=%d, maxReadLength=%d", attributeId, maxReadLength);
-    if ((attributeId == ColorControl::Attributes::ColorTemperatureMireds::Id) && (maxReadLength == 2))
+    if ((attributeId == ColorControl::Attributes::CurrentHue::Id) && (maxReadLength == 1))
+    {
+        *buffer = dev->Hue();
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::CurrentHue: %d", *buffer);
+    }
+    else if ((attributeId == ColorControl::Attributes::CurrentSaturation::Id) && (maxReadLength == 1))
+    {
+        *buffer = dev->Saturation();
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::CurrentSaturation: %d", *buffer);
+    }
+    else if ((attributeId == ColorControl::Attributes::ColorTemperatureMireds::Id) && (maxReadLength == 2))
     {
         uint16_t level = dev->Mireds();
         memcpy(buffer, &level, sizeof(level));
@@ -721,7 +757,17 @@ EmberAfStatus HandleWriteColorControlAttribute(DeviceColorTemperature * dev, chi
 {
     ChipLogProgress(DeviceLayer, "HandleWriteColorControlAttribute: attrId=%d", attributeId);
 
-    if ((attributeId == ColorControl::Attributes::ColorTemperatureMireds::Id) && (dev->IsReachable()))
+    if ((attributeId == ColorControl::Attributes::CurrentHue::Id) && (dev->IsReachable()))
+    {
+        dev->SetHue(*buffer);
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::CurrentHue: %d", *buffer);
+    }
+    else if ((attributeId == ColorControl::Attributes::CurrentSaturation::Id) && (dev->IsReachable()))
+    {
+        dev->SetSaturation(*buffer);
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::CurrentSaturation: %d", *buffer);
+    }
+    else if ((attributeId == ColorControl::Attributes::ColorTemperatureMireds::Id) && (dev->IsReachable()))
     {
         uint16_t mireds = *(uint16_t *) buffer;
         ChipLogProgress(DeviceLayer, "mireds: %d", mireds);
@@ -742,7 +788,6 @@ EmberAfStatus HandleWriteColorControlAttribute(DeviceColorTemperature * dev, chi
     }
     else
     {
-        ChipLogProgress(DeviceLayer, "color mode: %d", *buffer);
         unhandled_attribute();
         return EMBER_ZCL_STATUS_FAILURE;
     }
@@ -874,9 +919,8 @@ bool emberAfActionsClusterInstantActionCallback(app::CommandHandler * commandObj
     return true;
 }
 
-const EmberAfDeviceType gBridgedColorTemperatureDeviceTypes[] = {
-    { DEVICE_TYPE_LO_COLOR_TEMPERATURE_LIGHT, DEVICE_VERSION_DEFAULT }, { DEVICE_TYPE_BRIDGED_NODE, DEVICE_VERSION_DEFAULT }
-};
+const EmberAfDeviceType gBridgedExtendedColorDeviceTypes[] = { { DEVICE_TYPE_LO_EXTENDED_COLOR_LIGHT, DEVICE_VERSION_DEFAULT },
+                                                               { DEVICE_TYPE_BRIDGED_NODE, DEVICE_VERSION_DEFAULT } };
 
 #define POLL_INTERVAL_MS (100)
 uint8_t poll_prescale = 0;
@@ -911,17 +955,20 @@ void * bridge_polling_thread(void * context)
             }
             if (ch == '5' && gLights.size() < CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT)
             {
-                auto light = new WLED(WLED_IP, "Office");
-                light->SetReachable(true);
-                light->SetChangeCallback(&HandleDeviceColorTemperatureStatusChanged);
-                gLights.push_back(light);
-                gDataVersions.push_back({ 0 });
+                for (int i = 0; i < NUM_WLEDS; i++)
+                {
+                    auto light = new WLED(wled_instances[i], "Office");
+                    light->SetReachable(true);
+                    light->SetChangeCallback(&HandleDeviceExtendedColorStatusChanged);
+                    gLights.push_back(light);
+                    gDataVersions.push_back({ 0 });
 
-                // TC-BR-2 step 5, Add Light 1 back
-                AddDeviceEndpoint(gLights.at(num_lights), &bridgedLightEndpoint,
-                                  Span<const EmberAfDeviceType>(gBridgedColorTemperatureDeviceTypes),
-                                  Span<DataVersion>(gDataVersions.at(num_lights)), 1);
-                num_lights++;
+                    // TC-BR-2 step 5, Add Light 1 back
+                    AddDeviceEndpoint(gLights.at(num_lights), &bridgedLightEndpoint,
+                                      Span<const EmberAfDeviceType>(gBridgedExtendedColorDeviceTypes),
+                                      Span<DataVersion>(gDataVersions.at(num_lights)), 1);
+                    num_lights++;
+                }
             }
             if (ch == 'b')
             {

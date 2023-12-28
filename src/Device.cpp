@@ -170,7 +170,7 @@ void DeviceDimmable::HandleDeviceChange(Device * device, Device::Changed_t chang
 DeviceColorTemperature::DeviceColorTemperature(const char * szDeviceName, std::string szLocation) :
     DeviceDimmable(szDeviceName, szLocation)
 {
-    mLevel = 0;
+    mMireds = 0;
 }
 
 uint16_t DeviceColorTemperature::Capabilities()
@@ -180,7 +180,7 @@ uint16_t DeviceColorTemperature::Capabilities()
 
 uint16_t DeviceColorTemperature::Mireds()
 {
-    return mLevel;
+    return mMireds;
 }
 
 void DeviceColorTemperature::SetMireds(uint16_t aMireds)
@@ -207,6 +207,70 @@ void DeviceColorTemperature::HandleDeviceChange(Device * device, Device::Changed
     if (mChanged_CB)
     {
         mChanged_CB(this, (DeviceColorTemperature::Changed_t) changeMask);
+    }
+}
+
+DeviceExtendedColor::DeviceExtendedColor(const char * szDeviceName, std::string szLocation) :
+    DeviceColorTemperature(szDeviceName, szLocation)
+{
+    mHue        = 0;
+    mSaturation = 0;
+}
+
+uint16_t DeviceExtendedColor::Capabilities()
+{
+    return static_cast<uint16_t>(chip::app::Clusters::ColorControl::ColorCapabilities::kColorTemperatureSupported) +
+        static_cast<uint16_t>(chip::app::Clusters::ColorControl::ColorCapabilities::kHueSaturationSupported);
+}
+
+uint8_t DeviceExtendedColor::Hue()
+{
+    return mHue;
+}
+
+void DeviceExtendedColor::SetHue(uint8_t aHue)
+{
+    bool changed;
+
+    changed = aHue ^ mHue;
+    mHue    = aHue;
+    ChipLogProgress(DeviceLayer, "Device[%s]: Hue %d", mName, aHue);
+
+    if ((changed) && (mChanged_CB))
+    {
+        mChanged_CB(this, kChanged_Hue);
+    }
+}
+
+uint8_t DeviceExtendedColor::Saturation()
+{
+    return mSaturation;
+}
+
+void DeviceExtendedColor::SetSaturation(uint8_t aSaturation)
+{
+    bool changed;
+
+    changed     = aSaturation ^ mSaturation;
+    mSaturation = aSaturation;
+    ChipLogProgress(DeviceLayer, "Device[%s]: Saturation %d", mName, aSaturation);
+
+    if ((changed) && (mChanged_CB))
+    {
+        mChanged_CB(this, kChanged_Saturation);
+    }
+}
+
+void DeviceExtendedColor::SetChangeCallback(DeviceCallback_fn aChanged_CB)
+{
+    mChanged_CB = aChanged_CB;
+}
+
+void DeviceExtendedColor::HandleDeviceChange(Device * device, Device::Changed_t changeMask)
+{
+    if (mChanged_CB)
+    {
+        mChanged_CB(this, (DeviceExtendedColor::Changed_t) changeMask);
     }
 }
 

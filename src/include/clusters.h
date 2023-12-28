@@ -42,10 +42,18 @@ public:
 
     virtual uint16_t Capabilities() = 0;
 
-    virtual uint16_t Mireds()                = 0;
-    virtual void SetMireds(uint16_t aMireds) = 0;
+    virtual uint16_t Mireds() { abort(); }
+    virtual void SetMireds(uint16_t aMireds) { abort(); }
+
+    virtual uint8_t Hue() { abort(); }
+    virtual void SetHue(uint8_t aHue) { abort(); }
+
+    virtual uint8_t Saturation() { abort(); }
+    virtual void SetSaturation(uint8_t aSaturation) { abort(); }
 
 protected:
-    uint8_t mColorMode = 255;
-    uint16_t mMireds   = 0;
+    uint8_t mColorMode  = 255;
+    uint16_t mMireds    = 0;
+    uint8_t mHue        = 0;
+    uint8_t mSaturation = 0;
 };

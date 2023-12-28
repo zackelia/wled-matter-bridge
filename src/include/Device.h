@@ -161,6 +161,33 @@ protected:
     uint16_t mireds;
 };
 
+class DeviceExtendedColor : public DeviceColorTemperature
+{
+public:
+    enum Changed_t
+    {
+        kChanged_Hue        = kChanged_Mireds << 1,
+        kChanged_Saturation = kChanged_Hue << 1,
+    } Changed;
+
+    DeviceExtendedColor(const char * szDeviceName, std::string szLocation);
+
+    virtual uint16_t Capabilities();
+
+    virtual uint8_t Hue();
+    virtual void SetHue(uint8_t aHue);
+
+    virtual uint8_t Saturation();
+    virtual void SetSaturation(uint8_t aSaturation);
+
+    using DeviceCallback_fn = std::function<void(DeviceExtendedColor *, DeviceExtendedColor::Changed_t)>;
+    void SetChangeCallback(DeviceCallback_fn aChanged_CB);
+
+private:
+    void HandleDeviceChange(Device * device, Device::Changed_t changeMask);
+    DeviceCallback_fn mChanged_CB;
+};
+
 class EndpointListInfo
 {
 public:
