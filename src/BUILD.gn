@@ -32,24 +32,24 @@ executable("chip-bridge-app") {
     "${chip_root}/examples/bridge-app/bridge-common",
     "${chip_root}/examples/platform/linux:app-main",
     "${chip_root}/src/lib",
-    "${chip_root}/third_party/jsoncpp"
+    "${chip_root}/third_party/jsoncpp",
+    "//third_party/jthread",
   ]
 
   libs = [
-    "cmake-build/third_party/curl/lib/libcurl-d.a",
+    "//third_party/curl/repo/build/lib/libcurl.a",
     "z"
   ]
 
   cflags = [
     "-Wconversion",
     # Should only be set to 1 for development
-    "-DABORT_ON_UNHANDLED_ATTRIBUTE=0"
+    "-DABORT_ON_UNHANDLED_ATTRIBUTE=0",
   ]
 
   include_dirs = [
     "include",
-    "third_party/curl/include/",
-    "third_party/jthread/source/",
+    "//third_party/curl/repo/include/",
   ]
 
   output_dir = root_out_dir

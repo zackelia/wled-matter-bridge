@@ -2,8 +2,8 @@
 	path = third_party/connectedhomeip
 	url = https://github.com/project-chip/connectedhomeip/
 [submodule "third_party/curl"]
-	path = third_party/curl
+	path = third_party/curl/repo
 	url = https://github.com/curl/curl
 [submodule "third_party/jthread"]
-	path = third_party/jthread
+	path = third_party/jthread/repo
 	url = https://github.com/josuttis/jthread
