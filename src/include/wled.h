@@ -140,6 +140,10 @@ public:
         return 0;
     }
 
+    inline std::string GetManufacturer() override { return led_info.manufacturer; }
+    inline std::string GetSerialNumber() override { return led_info.serial_number; }
+    inline std::string GetModel() override { return led_info.model; }
+
     bool IsOn() override { return on(); }
     void SetOnOff(bool aOn) override
     {
@@ -248,6 +252,9 @@ public:
         led_state.brightness   = static_cast<uint8_t>(root["state"]["bri"].asUInt());
         led_state.capabilities = root["info"]["leds"]["lc"].asInt();
 
+        led_info.serial_number = root["info"]["mac"].asString();
+        led_info.model         = root["info"]["arch"].asString() + " v" + root["info"]["ver"].asString();
+
         std::cout << "RGB Support: " << SUPPORTS_RGB(led_state.capabilities) << std::endl;
         std::cout << "White Support: " << SUPPORTS_WHITE_CHANNEL(led_state.capabilities) << std::endl;
         std::cout << "Color temp Support: " << SUPPORTS_COLOR_TEMPERATURE(led_state.capabilities) << std::endl;
@@ -296,8 +303,16 @@ private:
         uint8_t cct;
     };
 
+    struct led_info
+    {
+        std::string manufacturer = "Aircookie/WLED";
+        std::string serial_number;
+        std::string model;
+    };
+
     CURL * curl;
     led_state led_state;
+    led_info led_info;
 
     Json::Reader reader;
     Json::FastWriter writer;

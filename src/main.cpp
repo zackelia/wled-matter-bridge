@@ -157,8 +157,12 @@ DECLARE_DYNAMIC_ATTRIBUTE(Descriptor::Attributes::DeviceTypeList::Id, ARRAY, kDe
 
 // Declare Bridged Device Basic Information cluster attributes
 DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(bridgedDeviceBasicAttrs)
-DECLARE_DYNAMIC_ATTRIBUTE(BridgedDeviceBasicInformation::Attributes::NodeLabel::Id, CHAR_STRING, kNodeLabelSize, 0), /* NodeLabel */
-    DECLARE_DYNAMIC_ATTRIBUTE(BridgedDeviceBasicInformation::Attributes::Reachable::Id, BOOLEAN, 1, 0),              /* Reachable */
+DECLARE_DYNAMIC_ATTRIBUTE(BridgedDeviceBasicInformation::Attributes::VendorName::Id, CHAR_STRING, kNodeLabelSize, 0),
+    DECLARE_DYNAMIC_ATTRIBUTE(BridgedDeviceBasicInformation::Attributes::ProductName::Id, CHAR_STRING, kNodeLabelSize, 0),
+    DECLARE_DYNAMIC_ATTRIBUTE(BridgedDeviceBasicInformation::Attributes::SerialNumber::Id, CHAR_STRING, kNodeLabelSize, 0),
+    DECLARE_DYNAMIC_ATTRIBUTE(BridgedDeviceBasicInformation::Attributes::NodeLabel::Id, CHAR_STRING, kNodeLabelSize,
+                              0),                                                                         /* NodeLabel */
+    DECLARE_DYNAMIC_ATTRIBUTE(BridgedDeviceBasicInformation::Attributes::Reachable::Id, BOOLEAN, 1, 0),   /* Reachable */
     DECLARE_DYNAMIC_ATTRIBUTE(BridgedDeviceBasicInformation::Attributes::FeatureMap::Id, BITMAP32, 4, 0), /* feature map */
     DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
 
@@ -446,6 +450,21 @@ EmberAfStatus HandleReadBridgedDeviceBasicAttribute(Device * dev, chip::Attribut
     {
         uint32_t featureMap = ZCL_BRIDGED_DEVICE_BASIC_INFORMATION_FEATURE_MAP;
         memcpy(buffer, &featureMap, sizeof(featureMap));
+    }
+    else if ((attributeId == VendorName::Id) && (maxReadLength == 32))
+    {
+        MutableByteSpan zclNameSpan(buffer, maxReadLength);
+        MakeZclCharString(zclNameSpan, dev->GetManufacturer().c_str());
+    }
+    else if ((attributeId == ProductName::Id) && (maxReadLength == 32))
+    {
+        MutableByteSpan zclNameSpan(buffer, maxReadLength);
+        MakeZclCharString(zclNameSpan, dev->GetModel().c_str());
+    }
+    else if ((attributeId == SerialNumber::Id) && (maxReadLength == 32))
+    {
+        MutableByteSpan zclNameSpan(buffer, maxReadLength);
+        MakeZclCharString(zclNameSpan, dev->GetSerialNumber().c_str());
     }
     else
     {

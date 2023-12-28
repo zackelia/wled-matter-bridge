@@ -59,6 +59,10 @@ public:
     inline std::string GetZone() { return mZone; };
     inline void SetZone(std::string zone) { mZone = zone; };
 
+    virtual inline std::string GetManufacturer() = 0;
+    virtual inline std::string GetSerialNumber() = 0;
+    virtual inline std::string GetModel()        = 0;
+
 private:
     virtual void HandleDeviceChange(Device * device, Device::Changed_t changeMask) = 0;
 
