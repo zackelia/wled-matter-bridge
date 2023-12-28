@@ -911,7 +911,7 @@ void * bridge_polling_thread(void * context)
             }
             if (ch == '5' && gLights.size() < CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT)
             {
-                auto light = new WLED(WLED_IP, WLED_NAME, "Office");
+                auto light = new WLED(WLED_IP, "Office");
                 light->SetReachable(true);
                 light->SetChangeCallback(&HandleDeviceColorTemperatureStatusChanged);
                 gLights.push_back(light);

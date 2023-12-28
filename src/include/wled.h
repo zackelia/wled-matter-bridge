@@ -37,8 +37,7 @@
 class WLED : public DeviceColorTemperature
 {
 public:
-    WLED(std::string_view ip, const char * szDeviceName, std::string szLocation)
-    noexcept : DeviceColorTemperature(szDeviceName, szLocation)
+    WLED(std::string_view ip, std::string szLocation) noexcept : DeviceColorTemperature("WLED", szLocation)
     {
         curl = curl_easy_init();
         if (!curl)
@@ -252,8 +251,14 @@ public:
         led_state.brightness   = static_cast<uint8_t>(root["state"]["bri"].asUInt());
         led_state.capabilities = root["info"]["leds"]["lc"].asInt();
 
+        led_info.name          = root["info"]["name"].asString();
         led_info.serial_number = root["info"]["mac"].asString();
         led_info.model         = root["info"]["arch"].asString() + " v" + root["info"]["ver"].asString();
+
+        if (strncmp(mName, led_info.name.c_str(), sizeof(mName)) != 0)
+        {
+            SetName(led_info.name.c_str());
+        }
 
         std::cout << "RGB Support: " << SUPPORTS_RGB(led_state.capabilities) << std::endl;
         std::cout << "White Support: " << SUPPORTS_WHITE_CHANNEL(led_state.capabilities) << std::endl;
@@ -305,6 +310,7 @@ private:
 
     struct led_info
     {
+        std::string name;
         std::string manufacturer = "Aircookie/WLED";
         std::string serial_number;
         std::string model;
