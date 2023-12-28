@@ -52,6 +52,7 @@
 #include <array>
 #include <cassert>
 #include <iostream>
+#include <math.h>
 #include <vector>
 
 #include "wled.h"
@@ -96,6 +97,7 @@ std::vector<Action *> gActions;
 // (taken from lo-devices.xml)
 #define DEVICE_TYPE_LO_ON_OFF_LIGHT 0x0100
 #define DEVICE_TYPE_LO_DIMMABLE_LIGHT 0x0101
+#define DEVICE_TYPE_LO_COLOR_TEMPERATURE_LIGHT 0x010C
 
 // Device Version for dynamic endpoints:
 #define DEVICE_VERSION_DEFAULT 1
@@ -106,6 +108,7 @@ std::vector<Action *> gActions;
 //   - Identify
 //   - On/Off
 //   - Level Control
+//   - Color Conttrol
 //   - Descriptor
 //   - Bridged Device Basic Information
 
@@ -131,6 +134,18 @@ DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::CurrentLevel::Id, INT8U, 1, 
     DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::StartUpCurrentLevel::Id, INT8U, 1, ZAP_ATTRIBUTE_MASK(WRITABLE)),
     DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::ClusterRevision::Id, INT16U, 2, 0),
     DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::FeatureMap::Id, BITMAP32, 4, 0), DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
+
+// Declare Color Control cluster attributes
+DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(colorControlAttrs)
+DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::ColorTemperatureMireds::Id, INT16U, 2, 0),
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::ColorMode::Id, ENUM8, 1, 0),
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::Options::Id, BITMAP8, 1, ZAP_ATTRIBUTE_MASK(WRITABLE)),
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::EnhancedColorMode::Id, ENUM8, 1, 0),
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::ColorCapabilities::Id, BITMAP16, 2, 0),
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::ColorTempPhysicalMinMireds::Id, INT16U, 2, 0),
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::ColorTempPhysicalMaxMireds::Id, INT16U, 2, 0),
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::StartUpColorTemperatureMireds::Id, INT16U, 2, ZAP_ATTRIBUTE_MASK(WRITABLE)),
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::FeatureMap::Id, BITMAP32, 4, 0), DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
 
 // Declare Descriptor cluster attributes
 DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(descriptorAttrs)
@@ -176,10 +191,19 @@ constexpr CommandId levelControlIncomingCommands[] = {
     kInvalidCommandId,
 };
 
+constexpr CommandId colorControlIncomingCommands[] = {
+    app::Clusters::ColorControl::Commands::MoveToColorTemperature::Id,
+    app::Clusters::ColorControl::Commands::StopMoveStep::Id,
+    app::Clusters::ColorControl::Commands::MoveColorTemperature::Id,
+    app::Clusters::ColorControl::Commands::StepColorTemperature::Id,
+    kInvalidCommandId,
+};
+
 DECLARE_DYNAMIC_CLUSTER_LIST_BEGIN(bridgedLightClusters)
 DECLARE_DYNAMIC_CLUSTER(Identify::Id, identifyAttrs, identifyIncomingCommands, nullptr),
     DECLARE_DYNAMIC_CLUSTER(OnOff::Id, onOffAttrs, onOffIncomingCommands, nullptr),
     DECLARE_DYNAMIC_CLUSTER(LevelControl::Id, levelControlAttrs, levelControlIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(ColorControl::Id, colorControlAttrs, colorControlIncomingCommands, nullptr),
     DECLARE_DYNAMIC_CLUSTER(Descriptor::Id, descriptorAttrs, nullptr, nullptr),
     DECLARE_DYNAMIC_CLUSTER(BridgedDeviceBasicInformation::Id, bridgedDeviceBasicAttrs, nullptr,
                             nullptr) DECLARE_DYNAMIC_CLUSTER_LIST_END;
@@ -206,6 +230,8 @@ Action action1(0x1001, "Room 1 On", Actions::ActionTypeEnum::kAutomation, 0xE001
 #define ZCL_LEVEL_CONTROL_CLUSTER_REVISION (5u)
 #define ZCL_LEVEL_CONTROL_FEATURE_MAP (3u)
 #define ZCL_LEVEL_CONTROL_OPTIONS (1u)
+#define ZCL_COLOR_CONTROL_CLUSTER_REVISION (6u)
+#define ZCL_COLOR_CONTROL_OPTIONS (1u)
 
 // ---------------------------------------------------------------------------
 
@@ -234,10 +260,13 @@ int AddDeviceEndpoint(Device * dev, EmberAfEndpointType * ep, const Span<const E
                     // TODO: This won't work for every device! Does that matter?
                     // Seems to be tracked here: https://github.com/orgs/project-chip/projects/85
                     emberAfLevelControlClusterServerInitCallback(dev->GetEndpointId());
+                    emberAfColorControlClusterServerInitCallback(dev->GetEndpointId());
                     return index;
                 }
                 if (ret != EMBER_ZCL_STATUS_DUPLICATE_EXISTS)
                 {
+                    ChipLogError(DeviceLayer, "Got unhandled error: %d", ret);
+                    abort();
                     return -1;
                 }
                 // Handle wrap condition
@@ -368,6 +397,16 @@ void HandleDeviceDimmableStatusChanged(DeviceDimmable * dev, DeviceDimmable::Cha
     if (itemChangedMask & DeviceDimmable::kChanged_Level)
     {
         ScheduleReportingCallback(dev, LevelControl::Id, LevelControl::Attributes::CurrentLevel::Id);
+    }
+}
+
+void HandleDeviceColorTemperatureStatusChanged(DeviceColorTemperature * dev, DeviceColorTemperature::Changed_t itemChangedMask)
+{
+    HandleDeviceDimmableStatusChanged(static_cast<DeviceDimmable *>(dev), (DeviceDimmable::Changed_t) itemChangedMask);
+
+    if (itemChangedMask & DeviceColorTemperature::kChanged_Mireds)
+    {
+        ScheduleReportingCallback(dev, ColorControl::Id, ColorControl::Attributes::ColorTemperatureMireds::Id);
     }
 }
 
@@ -521,6 +560,78 @@ EmberAfStatus HandleReadLevelControlAttribute(DeviceDimmable * dev, chip::Attrib
     return EMBER_ZCL_STATUS_SUCCESS;
 }
 
+EmberAfStatus HandleReadColorControlAttribute(DeviceColorTemperature * dev, chip::AttributeId attributeId, uint8_t * buffer,
+                                              uint16_t maxReadLength)
+{
+    ChipLogProgress(DeviceLayer, "HandleReadColorControlAttribute: attrId=%d, maxReadLength=%d", attributeId, maxReadLength);
+    if ((attributeId == ColorControl::Attributes::ColorTemperatureMireds::Id) && (maxReadLength == 2))
+    {
+        uint16_t level = dev->Mireds();
+        memcpy(buffer, &level, sizeof(level));
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::ColorTemperatureMireds: %d", *(uint16_t *) buffer);
+    }
+    else if ((attributeId == ColorControl::Attributes::ColorMode::Id) && (maxReadLength == 1))
+    {
+        *buffer = dev->ColorMode();
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::ColorMode: %d", *buffer);
+    }
+    else if ((attributeId == ColorControl::Attributes::Options::Id) && (maxReadLength == 1))
+    {
+        *buffer = ZCL_COLOR_CONTROL_OPTIONS;
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::Options: %d", *buffer);
+    }
+    else if ((attributeId == ColorControl::Attributes::EnhancedColorMode::Id) && (maxReadLength == 1))
+    {
+        *buffer = dev->ColorMode();
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::EnhancedColorMode: %d", *buffer);
+    }
+    else if ((attributeId == ColorControl::Attributes::StartUpColorTemperatureMireds::Id) && (maxReadLength == 2))
+    {
+        uint16_t level = dev->Mireds();
+        memcpy(buffer, &level, sizeof(level));
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::StartUpColorTemperatureMireds: %d", *(uint16_t *) buffer);
+    }
+    else if ((attributeId == ColorControl::Attributes::ColorCapabilities::Id) && (maxReadLength == 2))
+    {
+        uint16_t featureMap = dev->Capabilities();
+        memcpy(buffer, &featureMap, sizeof(featureMap));
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::ColorCapabilities: %d", *(uint16_t *) buffer);
+    }
+    else if ((attributeId == ColorControl::Attributes::ColorTempPhysicalMinMireds::Id) && (maxReadLength == 2))
+    {
+        constexpr int WLED_KELVIN_MAX = 10091;
+        uint16_t minK                 = static_cast<uint16_t>(ceil(1000000.0 / WLED_KELVIN_MAX));
+        memcpy(buffer, &minK, sizeof(minK));
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::ColorTempPhysicalMinMireds: %d", *(uint16_t *) buffer);
+    }
+    else if ((attributeId == ColorControl::Attributes::ColorTempPhysicalMaxMireds::Id) && (maxReadLength == 2))
+    {
+        constexpr int WLED_KELVIN_MIN = 1900;
+        uint16_t maxK                 = static_cast<uint16_t>(floor(1000000.0 / WLED_KELVIN_MIN));
+        memcpy(buffer, &maxK, sizeof(maxK));
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::ColorTempPhysicalMaxMireds: %d", *(uint16_t *) buffer);
+    }
+    else if ((attributeId == ColorControl::Attributes::FeatureMap::Id) && (maxReadLength == 4))
+    {
+        uint32_t featureMap = dev->Capabilities();
+        memcpy(buffer, &featureMap, sizeof(featureMap));
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::FeatureMap: %d", *(uint32_t *) buffer);
+    }
+    else if ((attributeId == ColorControl::Attributes::ClusterRevision::Id) && (maxReadLength == 2))
+    {
+        uint16_t rev = ZCL_COLOR_CONTROL_CLUSTER_REVISION;
+        memcpy(buffer, &rev, sizeof(rev));
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::ClusterRevision: %d", *(uint16_t *) buffer);
+    }
+    else
+    {
+        unhandled_attribute();
+        return EMBER_ZCL_STATUS_FAILURE;
+    }
+
+    return EMBER_ZCL_STATUS_SUCCESS;
+}
+
 EmberAfStatus HandleWriteIdentifyAttribute(Device * dev, chip::AttributeId attributeId, uint8_t * buffer)
 {
     ChipLogProgress(DeviceLayer, "HandleWriteIdentifyAttribute: attrId=%d", attributeId);
@@ -587,6 +698,39 @@ EmberAfStatus HandleWriteLevelControlAttribute(DeviceDimmable * dev, chip::Attri
     return EMBER_ZCL_STATUS_SUCCESS;
 }
 
+EmberAfStatus HandleWriteColorControlAttribute(DeviceColorTemperature * dev, chip::AttributeId attributeId, uint8_t * buffer)
+{
+    ChipLogProgress(DeviceLayer, "HandleWriteColorControlAttribute: attrId=%d", attributeId);
+
+    if ((attributeId == ColorControl::Attributes::ColorTemperatureMireds::Id) && (dev->IsReachable()))
+    {
+        uint16_t mireds = *(uint16_t *) buffer;
+        ChipLogProgress(DeviceLayer, "mireds: %d", mireds);
+        dev->SetMireds(mireds);
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::ColorTemperatureMireds: %d", mireds);
+    }
+    else if ((attributeId == ColorControl::Attributes::ColorMode::Id) && (dev->IsReachable()))
+    {
+        // TODO: This should not be writable???? Why is this getting called????
+        dev->SetColorMode(*(ColorControl::ColorMode *) (buffer));
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::ColorMode: %d", *buffer);
+    }
+    else if ((attributeId == ColorControl::Attributes::EnhancedColorMode::Id) && (dev->IsReachable()))
+    {
+        // TODO: This should not be writable???? Why is this getting called????
+        dev->SetColorMode(*(ColorControl::ColorMode *) (buffer));
+        ChipLogProgress(DeviceLayer, "ColorControl::Attributes::EnhancedColorMode: %d", *buffer);
+    }
+    else
+    {
+        ChipLogProgress(DeviceLayer, "color mode: %d", *buffer);
+        unhandled_attribute();
+        return EMBER_ZCL_STATUS_FAILURE;
+    }
+
+    return EMBER_ZCL_STATUS_SUCCESS;
+}
+
 EmberAfStatus emberAfExternalAttributeReadCallback(EndpointId endpoint, ClusterId clusterId,
                                                    const EmberAfAttributeMetadata * attributeMetadata, uint8_t * buffer,
                                                    uint16_t maxReadLength)
@@ -615,6 +759,11 @@ EmberAfStatus emberAfExternalAttributeReadCallback(EndpointId endpoint, ClusterI
         {
             ret = HandleReadLevelControlAttribute(static_cast<DeviceDimmable *>(dev), attributeMetadata->attributeId, buffer,
                                                   maxReadLength);
+        }
+        else if (clusterId == ColorControl::Id)
+        {
+            ret = HandleReadColorControlAttribute(static_cast<DeviceColorTemperature *>(dev), attributeMetadata->attributeId,
+                                                  buffer, maxReadLength);
         }
         else
         {
@@ -652,6 +801,11 @@ EmberAfStatus emberAfExternalAttributeWriteCallback(EndpointId endpoint, Cluster
         if (clusterId == LevelControl::Id)
         {
             ret = HandleWriteLevelControlAttribute(static_cast<DeviceDimmable *>(dev), attributeMetadata->attributeId, buffer);
+        }
+        if (clusterId == ColorControl::Id)
+        {
+            ret = HandleWriteColorControlAttribute(static_cast<DeviceColorTemperature *>(dev), attributeMetadata->attributeId,
+                                                   buffer);
         }
     }
 
@@ -701,8 +855,9 @@ bool emberAfActionsClusterInstantActionCallback(app::CommandHandler * commandObj
     return true;
 }
 
-const EmberAfDeviceType gBridgedDimmableDeviceTypes[] = { { DEVICE_TYPE_LO_DIMMABLE_LIGHT, DEVICE_VERSION_DEFAULT },
-                                                          { DEVICE_TYPE_BRIDGED_NODE, DEVICE_VERSION_DEFAULT } };
+const EmberAfDeviceType gBridgedColorTemperatureDeviceTypes[] = {
+    { DEVICE_TYPE_LO_COLOR_TEMPERATURE_LIGHT, DEVICE_VERSION_DEFAULT }, { DEVICE_TYPE_BRIDGED_NODE, DEVICE_VERSION_DEFAULT }
+};
 
 #define POLL_INTERVAL_MS (100)
 uint8_t poll_prescale = 0;
@@ -737,15 +892,15 @@ void * bridge_polling_thread(void * context)
             }
             if (ch == '5' && gLights.size() < CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT)
             {
-                auto light = new WLED(WLED_IP, "Zack's Desk", "Office");
+                auto light = new WLED(WLED_IP, WLED_NAME, "Office");
                 light->SetReachable(true);
-                light->SetChangeCallback(&HandleDeviceDimmableStatusChanged);
+                light->SetChangeCallback(&HandleDeviceColorTemperatureStatusChanged);
                 gLights.push_back(light);
                 gDataVersions.push_back({ 0 });
 
                 // TC-BR-2 step 5, Add Light 1 back
                 AddDeviceEndpoint(gLights.at(num_lights), &bridgedLightEndpoint,
-                                  Span<const EmberAfDeviceType>(gBridgedDimmableDeviceTypes),
+                                  Span<const EmberAfDeviceType>(gBridgedColorTemperatureDeviceTypes),
                                   Span<DataVersion>(gDataVersions.at(num_lights)), 1);
                 num_lights++;
             }

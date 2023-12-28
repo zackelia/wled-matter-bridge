@@ -167,6 +167,49 @@ void DeviceDimmable::HandleDeviceChange(Device * device, Device::Changed_t chang
     }
 }
 
+DeviceColorTemperature::DeviceColorTemperature(const char * szDeviceName, std::string szLocation) :
+    DeviceDimmable(szDeviceName, szLocation)
+{
+    mLevel = 0;
+}
+
+uint16_t DeviceColorTemperature::Capabilities()
+{
+    return static_cast<uint16_t>(chip::app::Clusters::ColorControl::ColorCapabilities::kColorTemperatureSupported);
+}
+
+uint16_t DeviceColorTemperature::Mireds()
+{
+    return mLevel;
+}
+
+void DeviceColorTemperature::SetMireds(uint16_t aMireds)
+{
+    bool changed;
+
+    changed = aMireds ^ mMireds;
+    mMireds = aMireds;
+    ChipLogProgress(DeviceLayer, "Device[%s]: Mireds %d", mName, aMireds);
+
+    if ((changed) && (mChanged_CB))
+    {
+        mChanged_CB(this, kChanged_Mireds);
+    }
+}
+
+void DeviceColorTemperature::SetChangeCallback(DeviceCallback_fn aChanged_CB)
+{
+    mChanged_CB = aChanged_CB;
+}
+
+void DeviceColorTemperature::HandleDeviceChange(Device * device, Device::Changed_t changeMask)
+{
+    if (mChanged_CB)
+    {
+        mChanged_CB(this, (DeviceColorTemperature::Changed_t) changeMask);
+    }
+}
+
 EndpointListInfo::EndpointListInfo(uint16_t endpointListId, std::string name, EndpointListTypeEnum type)
 {
     mEndpointListId = endpointListId;

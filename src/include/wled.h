@@ -34,10 +34,11 @@
 #define SUPPORTS_WHITE_CHANNEL(x) BIT_SET(x, 1)
 #define SUPPORTS_COLOR_TEMPERATURE(x) BIT_SET(x, 2)
 
-class WLED : public DeviceDimmable
+class WLED : public DeviceColorTemperature
 {
 public:
-    WLED(std::string_view ip, const char * szDeviceName, std::string szLocation) noexcept : DeviceDimmable(szDeviceName, szLocation)
+    WLED(std::string_view ip, const char * szDeviceName, std::string szLocation)
+    noexcept : DeviceColorTemperature(szDeviceName, szLocation)
     {
         curl = curl_easy_init();
         if (!curl)
@@ -153,6 +154,41 @@ public:
         DeviceDimmable::SetLevel(aLevel);
     }
 
+    uint16_t Capabilities() override
+    {
+        int caps = 0;
+        if (SUPPORTS_RGB(led_state.capabilities))
+        {
+            caps += static_cast<int>(chip::app::Clusters::ColorControl::ColorCapabilities::kHueSaturationSupported);
+        }
+        if (SUPPORTS_COLOR_TEMPERATURE(led_state.capabilities))
+        {
+            caps += static_cast<int>(chip::app::Clusters::ColorControl::ColorCapabilities::kColorTemperatureSupported);
+        }
+        return static_cast<uint16_t>(caps);
+    }
+
+    uint16_t Mireds() override
+    {
+        // Kelvin range for WLED is 1900 to 10091
+        uint16_t kelvin = static_cast<uint16_t>((led_state.cct * ((10091 - 1900) / 255)) + 1900);
+        return static_cast<uint16_t>(1000000 / kelvin);
+    }
+
+    void SetMireds(uint16_t aMireds) override
+    {
+        uint16_t kelvin = static_cast<uint16_t>(1000000 / aMireds);
+        if (kelvin < 1900 || kelvin > 10091)
+        {
+            std::cerr << "Matter requested an unsupported Kelvin for WLED: " << kelvin << std::endl;
+            abort();
+        }
+
+        uint8_t cct = static_cast<uint8_t>(255 * (kelvin - 1900) / (10091 - 1900));
+        set_cct(cct);
+        DeviceColorTemperature::SetMireds(aMireds);
+    }
+
     [[nodiscard]] uint8_t brightness() const noexcept { return led_state.brightness; }
 
     [[nodiscard]] bool on() const noexcept { return led_state.on; }
@@ -175,6 +211,17 @@ public:
         root["tt"] = 1;
         send(writer.write(root));
         led_state.on = on;
+    }
+
+    void set_cct(uint8_t cct) noexcept
+    {
+        Json::Value root;
+        // Matter sets brightness after setting a light to off. WLED will interpret this as turning the light back on which is
+        // unintended. Send the `on` state at the same time to prevent this.
+        root["on"]         = on();
+        root["seg"]["cct"] = cct;
+        send(writer.write(root));
+        led_state.cct = cct;
     }
 
     // private:
@@ -205,6 +252,18 @@ public:
         std::cout << "White Support: " << SUPPORTS_WHITE_CHANNEL(led_state.capabilities) << std::endl;
         std::cout << "Color temp Support: " << SUPPORTS_COLOR_TEMPERATURE(led_state.capabilities) << std::endl;
 
+        if (SUPPORTS_COLOR_TEMPERATURE(led_state.capabilities))
+        {
+            uint16_t cct = static_cast<uint16_t>(root["state"]["seg"][0]["cct"].asUInt());
+            if (cct >= 1900 && cct <= 10091) // Kelvin instead of relative, need to convert
+            {
+                // TODO: Does this ever actually happen?
+                cct = static_cast<uint16_t>(255 * (cct - 1900) / (10091 - 1900));
+            }
+            // cct is appropriately sized now
+            led_state.cct = static_cast<uint8_t>(cct);
+        }
+
         return 0;
     }
 
@@ -234,6 +293,7 @@ private:
         bool on;
         uint8_t brightness;
         int capabilities;
+        uint8_t cct;
     };
 
     CURL * curl;

@@ -22,42 +22,13 @@
 #include <app/util/attribute-storage.h>
 
 #include <chrono>
+#include <functional>
 #include <stdbool.h>
 #include <stdint.h>
-
-// TODO: I don't know why this warning is hitting
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-#include <jthread.hpp>
-#pragma GCC diagnostic pop
-
-#include <functional>
 #include <thread>
 #include <vector>
 
-class IdentifyInterface
-{
-public:
-    virtual ~IdentifyInterface() = default;
-
-    void Identify(uint16_t time)
-    {
-        if (remaining_time > 0)
-        {
-            // An identify command is already going, don't start another at the same time.
-            return;
-        }
-        remaining_time   = time;
-        animation_thread = std::jthread([=] { this->AnimateIdentify(); });
-    }
-    virtual void AnimateIdentify() = 0;
-
-    uint16_t IdentifyTime() { return remaining_time; }
-
-protected:
-    uint16_t remaining_time = 0;
-    std::jthread animation_thread;
-};
+#include "clusters.h"
 
 class Device : public IdentifyInterface
 {
@@ -159,6 +130,31 @@ private:
 
 protected:
     uint8_t mLevel;
+};
+
+class DeviceColorTemperature : public DeviceDimmable, public ColorControlInterface
+{
+public:
+    enum Changed_t
+    {
+        kChanged_Mireds = kChanged_Level << 1,
+    } Changed;
+
+    DeviceColorTemperature(const char * szDeviceName, std::string szLocation);
+
+    virtual uint16_t Capabilities();
+    virtual uint16_t Mireds();
+    virtual void SetMireds(uint16_t mireds);
+
+    using DeviceCallback_fn = std::function<void(DeviceColorTemperature *, DeviceColorTemperature::Changed_t)>;
+    void SetChangeCallback(DeviceCallback_fn aChanged_CB);
+
+private:
+    void HandleDeviceChange(Device * device, Device::Changed_t changeMask);
+    DeviceCallback_fn mChanged_CB;
+
+protected:
+    uint16_t mireds;
 };
 
 class EndpointListInfo
