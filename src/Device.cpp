@@ -44,17 +44,16 @@ void Device::SetReachable(bool aReachable)
 
     mReachable = aReachable;
 
-    if (aReachable)
-    {
-        ChipLogProgress(DeviceLayer, "Device[%s]: ONLINE", mName);
-    }
-    else
-    {
-        ChipLogProgress(DeviceLayer, "Device[%s]: OFFLINE", mName);
-    }
-
     if (changed)
     {
+        if (aReachable)
+        {
+            ChipLogProgress(DeviceLayer, "Device[%s]: ONLINE", mName);
+        }
+        else
+        {
+            ChipLogProgress(DeviceLayer, "Device[%s]: OFFLINE", mName);
+        }
         HandleDeviceChange(this, kChanged_Reachable);
     }
 }
@@ -63,12 +62,11 @@ void Device::SetName(const char * szName)
 {
     bool changed = (strncmp(mName, szName, sizeof(mName)) != 0);
 
-    ChipLogProgress(DeviceLayer, "Device[%s]: New Name=\"%s\"", mName, szName);
-
     chip::Platform::CopyString(mName, szName);
 
     if (changed)
     {
+        ChipLogProgress(DeviceLayer, "Device[%s]: New Name=\"%s\"", mName, szName);
         HandleDeviceChange(this, kChanged_Name);
     }
 }
@@ -79,10 +77,9 @@ void Device::SetLocation(std::string szLocation)
 
     mLocation = szLocation;
 
-    ChipLogProgress(DeviceLayer, "Device[%s]: Location=\"%s\"", mName, mLocation.c_str());
-
     if (changed)
     {
+        ChipLogProgress(DeviceLayer, "Device[%s]: Location=\"%s\"", mName, mLocation.c_str());
         HandleDeviceChange(this, kChanged_Location);
     }
 }
@@ -103,10 +100,10 @@ void DeviceOnOff::SetOnOff(bool aOn)
 
     changed = aOn ^ mOn;
     mOn     = aOn;
-    ChipLogProgress(DeviceLayer, "Device[%s]: %s", mName, aOn ? "ON" : "OFF");
 
     if ((changed) && (mChanged_CB))
     {
+        ChipLogProgress(DeviceLayer, "Device[%s]: %s", mName, aOn ? "ON" : "OFF");
         mChanged_CB(this, kChanged_OnOff);
     }
 }
@@ -146,10 +143,10 @@ void DeviceDimmable::SetLevel(uint8_t aLevel)
 
     changed = aLevel ^ mLevel;
     mLevel  = aLevel;
-    ChipLogProgress(DeviceLayer, "Device[%s]: Level %d", mName, aLevel);
 
     if ((changed) && (mChanged_CB))
     {
+        ChipLogProgress(DeviceLayer, "Device[%s]: Level %d", mName, aLevel);
         mChanged_CB(this, kChanged_Level);
     }
 }
@@ -189,10 +186,10 @@ void DeviceColorTemperature::SetMireds(uint16_t aMireds)
 
     changed = aMireds ^ mMireds;
     mMireds = aMireds;
-    ChipLogProgress(DeviceLayer, "Device[%s]: Mireds %d", mName, aMireds);
 
     if ((changed) && (mChanged_CB))
     {
+        ChipLogProgress(DeviceLayer, "Device[%s]: Mireds %d", mName, aMireds);
         mChanged_CB(this, kChanged_Mireds);
     }
 }
@@ -234,10 +231,10 @@ void DeviceExtendedColor::SetHue(uint8_t aHue)
 
     changed = aHue ^ mHue;
     mHue    = aHue;
-    ChipLogProgress(DeviceLayer, "Device[%s]: Hue %d", mName, aHue);
 
     if ((changed) && (mChanged_CB))
     {
+        ChipLogProgress(DeviceLayer, "Device[%s]: Hue %d", mName, aHue);
         mChanged_CB(this, kChanged_Hue);
     }
 }
@@ -253,10 +250,10 @@ void DeviceExtendedColor::SetSaturation(uint8_t aSaturation)
 
     changed     = aSaturation ^ mSaturation;
     mSaturation = aSaturation;
-    ChipLogProgress(DeviceLayer, "Device[%s]: Saturation %d", mName, aSaturation);
 
     if ((changed) && (mChanged_CB))
     {
+        ChipLogProgress(DeviceLayer, "Device[%s]: Saturation %d", mName, aSaturation);
         mChanged_CB(this, kChanged_Saturation);
     }
 }
