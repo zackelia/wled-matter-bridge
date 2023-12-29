@@ -38,31 +38,21 @@
 class WLED : public DeviceExtendedColor
 {
 public:
-    WLED(std::string_view ip, std::string szLocation) noexcept : DeviceExtendedColor("WLED", szLocation)
+    WLED(std::string_view ip, std::string szLocation)
+    noexcept : DeviceExtendedColor(("WLED " + std::string(ip)).c_str(), szLocation)
     {
-        curl = curl_easy_init();
-        if (!curl)
-        {
-            std::cerr << "curl_easy_init failed" << std::endl;
-            abort();
-        }
-
-        std::string websocket_addr = [&]() {
+        websocket_addr = [&]() {
             std::string temp = "ws://";
             temp.append(ip);
             temp.append("/ws");
             return temp;
         }();
-        curl_easy_setopt(curl, CURLOPT_URL, websocket_addr.c_str());
-        curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 2L); /* websocket style */
 
-        CURLcode res = curl_easy_perform(curl);
-        if (res != CURLE_OK)
+        if (connect())
         {
-            std::cerr << "curl_easy_perform: " << curl_easy_strerror(res) << std::endl;
-            abort();
+            std::cerr << "Could not setup websocket connection" << std::endl;
+            return;
         }
-
         wait();
         recv();
     }
@@ -103,6 +93,8 @@ public:
         }
         return sockfd;
     }
+
+    void update() noexcept { recv(); }
 
     int ping() noexcept
     {
@@ -207,9 +199,10 @@ public:
     void SetSaturation(uint8_t aSaturation) override
     {
         set_saturation(aSaturation);
-        DeviceExtendedColor::SetHue(aSaturation);
+        DeviceExtendedColor::SetSaturation(aSaturation);
     }
 
+private:
     [[nodiscard]] uint8_t brightness() const noexcept { return led_state.brightness; }
 
     [[nodiscard]] bool on() const noexcept { return led_state.on; }
@@ -279,13 +272,53 @@ public:
         led_state.cct = cct;
     }
 
-    // private:
+    int connect()
+    {
+        SetReachable(false);
+
+        curl = curl_easy_init();
+        if (!curl)
+        {
+            std::cerr << "curl_easy_init: failed" << std::endl;
+            return -1;
+        }
+
+        curl_easy_setopt(curl, CURLOPT_URL, websocket_addr.c_str());
+        curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 2L); /* websocket style */
+
+        CURLcode res = curl_easy_perform(curl);
+        if (res != CURLE_OK)
+        {
+            std::cerr << "curl_easy_perform: " << curl_easy_strerror(res) << std::endl;
+            return -1;
+        }
+
+        SetReachable(true);
+
+        return 0;
+    }
+
+    void close()
+    {
+        if (!curl)
+            return;
+
+        curl_easy_cleanup(curl);
+        curl = nullptr;
+    }
+
     int recv() noexcept
     {
         size_t rlen;
         const struct curl_ws_frame * meta;
         char buffer[MAX_WEBSOCKET_BYTES];
         CURLcode result = curl_ws_recv(curl, buffer, sizeof(buffer), &rlen, &meta);
+        if (result == CURLE_GOT_NOTHING)
+        {
+            ChipLogProgress(DeviceLayer, "Got nothing from websocket, assuming disconnected");
+            SetReachable(false);
+            return -1;
+        }
         if (result != CURLE_OK)
         {
             std::cerr << "curl_ws_recv: " << curl_easy_strerror(result) << std::endl;
@@ -356,7 +389,6 @@ public:
         return (int) result;
     }
 
-private:
     int wait() const noexcept
     {
         fd_set rfds;
@@ -389,6 +421,7 @@ private:
         std::string model;
     };
 
+    std::string websocket_addr;
     CURL * curl;
     led_state led_state;
     led_info led_info;
