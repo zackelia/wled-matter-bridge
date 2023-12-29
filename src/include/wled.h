@@ -17,8 +17,10 @@
  */
 #pragma once
 
+#include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <sys/select.h>
@@ -94,7 +96,18 @@ public:
         return sockfd;
     }
 
-    void update() noexcept { recv(); }
+    void update() noexcept
+    {
+        recv();
+        // TODO: Handle this a little more elegantly
+        if (led_info.name.c_str())
+            Device::SetName(led_info.name.c_str());
+        DeviceOnOff::SetOnOff(led_state.on);
+        DeviceDimmable::SetLevel(led_state.brightness);
+        DeviceColorTemperature::SetMireds(cct_to_mireds(led_state.cct));
+        DeviceExtendedColor::SetHue(led_state.hsv.h);
+        DeviceExtendedColor::SetSaturation(led_state.hsv.s);
+    }
 
     int ping() noexcept
     {
@@ -167,24 +180,11 @@ public:
         return static_cast<uint16_t>(caps);
     }
 
-    uint16_t Mireds() override
-    {
-        // Kelvin range for WLED is 1900 to 10091
-        uint16_t kelvin = static_cast<uint16_t>((led_state.cct * ((10091 - 1900) / 255)) + 1900);
-        return static_cast<uint16_t>(1000000 / kelvin);
-    }
+    uint16_t Mireds() override { return cct_to_mireds(led_state.cct); }
 
     void SetMireds(uint16_t aMireds) override
     {
-        uint16_t kelvin = static_cast<uint16_t>(1000000 / aMireds);
-        if (kelvin < 1900 || kelvin > 10091)
-        {
-            std::cerr << "Matter requested an unsupported Kelvin for WLED: " << kelvin << std::endl;
-            abort();
-        }
-
-        uint8_t cct = static_cast<uint8_t>(255 * (kelvin - 1900) / (10091 - 1900));
-        set_cct(cct);
+        set_cct(mireds_to_cct(aMireds));
         DeviceColorTemperature::SetMireds(aMireds);
     }
 
@@ -209,6 +209,8 @@ private:
 
     void set_brightness(uint8_t brightness) noexcept
     {
+        // Matter max level is 254, WLED is 255
+        brightness = std::min(brightness, static_cast<uint8_t>(254));
         Json::Value root;
         // Matter sets brightness after setting a light to off. WLED will interpret this as turning the light back on which is
         // unintended. Send the `on` state at the same time to prevent this.
@@ -307,7 +309,7 @@ private:
         curl = nullptr;
     }
 
-    int recv() noexcept
+    int recv(bool is_response = false) noexcept
     {
         size_t rlen;
         const struct curl_ws_frame * meta;
@@ -319,10 +321,20 @@ private:
             SetReachable(false);
             return -1;
         }
+        if (result == CURLE_AGAIN)
+        {
+            // Multithreaded programming is hard, we probably already read the intended message
+            return 0;
+        }
         if (result != CURLE_OK)
         {
             std::cerr << "curl_ws_recv: " << curl_easy_strerror(result) << std::endl;
             abort();
+        }
+
+        if (is_response)
+        {
+            return 0;
         }
 
         Json::Value root;
@@ -333,8 +345,10 @@ private:
             return -1;
         }
 
-        led_state.on           = root["state"]["on"].asBool();
+        led_state.on = root["state"]["on"].asBool();
+        // Matter max level is 254, WLED is 255
         led_state.brightness   = static_cast<uint8_t>(root["state"]["bri"].asUInt());
+        led_state.brightness   = std::min(led_state.brightness, static_cast<uint8_t>(254));
         led_state.capabilities = root["info"]["leds"]["lc"].asInt();
 
         led_info.name          = root["info"]["name"].asString();
@@ -377,8 +391,11 @@ private:
         return 0;
     }
 
+    // TODO: Probably rename to send_and_recv or create a separate function
     int send(std::string data) noexcept
     {
+        std::lock_guard lock(mutex);
+
         size_t sent;
         CURLcode result = curl_ws_send(curl, data.c_str(), strlen(data.c_str()), &sent, 0, CURLWS_TEXT);
         if (result != CURLE_OK)
@@ -386,6 +403,13 @@ private:
             std::cerr << "curl_ws_send: " << curl_easy_strerror(result) << std::endl;
             abort();
         }
+
+        // TODO: I think there is a race condition here if an update comes before the response is received e.g.
+        // -> we send message
+        // <- we receive an external update (that we are now erroneously ignoring)
+        // <- we receive the websocket ack message from the sent message (we are now erroenously setting that)
+        recv(true);
+
         return (int) result;
     }
 
@@ -401,6 +425,24 @@ private:
             abort();
         }
         return ret;
+    }
+
+    inline uint8_t mireds_to_cct(uint16_t aMireds)
+    {
+        uint16_t kelvin = static_cast<uint16_t>(1000000 / aMireds);
+        if (kelvin < 1900 || kelvin > 10091)
+        {
+            std::cerr << "Matter requested an unsupported Kelvin for WLED: " << kelvin << std::endl;
+            abort();
+        }
+        return static_cast<uint8_t>(255 * (kelvin - 1900) / (10091 - 1900));
+    }
+
+    inline uint16_t cct_to_mireds(uint8_t aCct)
+    {
+        // Kelvin range for WLED is 1900 to 10091
+        uint16_t kelvin = static_cast<uint16_t>((aCct * ((10091 - 1900) / 255)) + 1900);
+        return static_cast<uint16_t>(1000000 / kelvin);
     }
 
     struct led_state
@@ -421,6 +463,7 @@ private:
         std::string model;
     };
 
+    std::mutex mutex;
     std::string websocket_addr;
     CURL * curl;
     led_state led_state;

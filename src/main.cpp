@@ -53,6 +53,7 @@
 #include <cassert>
 #include <iostream>
 #include <math.h>
+#include <sys/select.h>
 #include <vector>
 
 #include "wled.h"
@@ -406,7 +407,10 @@ void HandleDeviceOnOffStatusChanged(DeviceOnOff * dev, DeviceOnOff::Changed_t it
 
 void HandleDeviceDimmableStatusChanged(DeviceDimmable * dev, DeviceDimmable::Changed_t itemChangedMask)
 {
-    HandleDeviceOnOffStatusChanged(static_cast<DeviceOnOff *>(dev), (DeviceOnOff::Changed_t) itemChangedMask);
+    if (itemChangedMask & (DeviceOnOff::kChanged_Reachable | DeviceOnOff::kChanged_Name | DeviceOnOff::kChanged_Location))
+    {
+        HandleDeviceStatusChanged(static_cast<Device *>(dev), (Device::Changed_t) itemChangedMask);
+    }
 
     if (itemChangedMask & DeviceDimmable::kChanged_Level)
     {
@@ -416,7 +420,10 @@ void HandleDeviceDimmableStatusChanged(DeviceDimmable * dev, DeviceDimmable::Cha
 
 void HandleDeviceColorTemperatureStatusChanged(DeviceColorTemperature * dev, DeviceColorTemperature::Changed_t itemChangedMask)
 {
-    HandleDeviceDimmableStatusChanged(static_cast<DeviceDimmable *>(dev), (DeviceDimmable::Changed_t) itemChangedMask);
+    if (itemChangedMask & (DeviceOnOff::kChanged_Reachable | DeviceOnOff::kChanged_Name | DeviceOnOff::kChanged_Location))
+    {
+        HandleDeviceStatusChanged(static_cast<Device *>(dev), (Device::Changed_t) itemChangedMask);
+    }
 
     if (itemChangedMask & DeviceColorTemperature::kChanged_Mireds)
     {
@@ -426,8 +433,10 @@ void HandleDeviceColorTemperatureStatusChanged(DeviceColorTemperature * dev, Dev
 
 void HandleDeviceExtendedColorStatusChanged(DeviceExtendedColor * dev, DeviceExtendedColor::Changed_t itemChangedMask)
 {
-    HandleDeviceColorTemperatureStatusChanged(static_cast<DeviceColorTemperature *>(dev),
-                                              (DeviceColorTemperature::Changed_t) itemChangedMask);
+    if (itemChangedMask & (DeviceOnOff::kChanged_Reachable | DeviceOnOff::kChanged_Name | DeviceOnOff::kChanged_Location))
+    {
+        HandleDeviceStatusChanged(static_cast<Device *>(dev), (Device::Changed_t) itemChangedMask);
+    }
 
     if (itemChangedMask & DeviceExtendedColor::kChanged_Hue)
     {
@@ -932,6 +941,53 @@ bool kbhit()
     return byteswaiting > 0;
 }
 
+int pipefd[2];
+
+void * wled_monitoring_thread(void * context)
+{
+    int result;
+    fd_set rfds;
+    int nfds;
+
+    while (true)
+    {
+        FD_ZERO(&rfds);
+        FD_SET(pipefd[0], &rfds);
+        nfds = pipefd[0];
+
+        for (auto & light : gLights)
+        {
+            FD_SET(light->socket(), &rfds);
+            nfds = std::max(nfds, light->socket());
+        }
+
+        result = select(nfds + 1, &rfds, nullptr, nullptr, nullptr);
+        if (result == -1)
+        {
+            perror("select");
+            abort();
+        }
+
+        if (FD_ISSET(pipefd[0], &rfds))
+        {
+            char buf[1];
+            // Don't care what it is, just breaking out of select
+            read(pipefd[0], &buf, 1);
+        }
+
+        for (auto & light : gLights)
+        {
+            if (FD_ISSET(light->socket(), &rfds))
+            {
+                ChipLogProgress(DeviceLayer, "%s is ready to update!", light->GetName());
+                light->update();
+            }
+        }
+    }
+
+    return nullptr;
+}
+
 void * bridge_polling_thread(void * context)
 {
     size_t num_lights = 0;
@@ -958,8 +1014,11 @@ void * bridge_polling_thread(void * context)
                 for (int i = 0; i < NUM_WLEDS; i++)
                 {
                     auto light = new WLED(wled_instances[i], "Office");
-                    light->SetReachable(true);
-                    light->SetChangeCallback(&HandleDeviceExtendedColorStatusChanged);
+                    // TODO: Handle this a little more elegantly
+                    light->DeviceOnOff::SetChangeCallback(&HandleDeviceOnOffStatusChanged);
+                    light->DeviceDimmable::SetChangeCallback(&HandleDeviceDimmableStatusChanged);
+                    light->DeviceColorTemperature::SetChangeCallback(&HandleDeviceColorTemperatureStatusChanged);
+                    light->DeviceExtendedColor::SetChangeCallback(&HandleDeviceExtendedColorStatusChanged);
                     gLights.push_back(light);
                     gDataVersions.push_back({ 0 });
 
@@ -968,6 +1027,9 @@ void * bridge_polling_thread(void * context)
                                       Span<const EmberAfDeviceType>(gBridgedExtendedColorDeviceTypes),
                                       Span<DataVersion>(gDataVersions.at(num_lights)), 1);
                     num_lights++;
+                    // Tell the monitoring thread there is a new WLED device
+                    char buf[1] = { 1 };
+                    write(pipefd[1], buf, 1);
                 }
             }
             if (ch == 'b')
@@ -1026,12 +1088,31 @@ void ApplicationInit()
 
     gRooms.push_back(&room1);
 
+    int res;
+
+    res = pipe(pipefd);
+    if (res)
+    {
+        perror("pipe");
+        exit(1);
+    }
+
     {
         pthread_t poll_thread;
-        int res = pthread_create(&poll_thread, nullptr, bridge_polling_thread, nullptr);
+        res = pthread_create(&poll_thread, nullptr, bridge_polling_thread, nullptr);
         if (res)
         {
             printf("Error creating polling thread: %d\n", res);
+            exit(1);
+        }
+    }
+
+    {
+        pthread_t wled_thread;
+        res = pthread_create(&wled_thread, nullptr, wled_monitoring_thread, nullptr);
+        if (res)
+        {
+            printf("Error creating WLED thread: %d\n", res);
             exit(1);
         }
     }
