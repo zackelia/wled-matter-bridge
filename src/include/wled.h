@@ -53,6 +53,7 @@ public:
         if (connect())
         {
             std::cerr << "Could not setup websocket connection" << std::endl;
+            reconnect_thread = std::jthread([=] { this->reconnect(); });
             return;
         }
         wait();
@@ -151,6 +152,16 @@ public:
     inline std::string GetManufacturer() override { return led_info.manufacturer; }
     inline std::string GetSerialNumber() override { return led_info.serial_number; }
     inline std::string GetModel() override { return led_info.model; }
+
+    void SetReachable(bool reachable) override
+    {
+        if (!reachable && curl)
+        {
+            curl_easy_cleanup(curl);
+            curl = 0;
+        }
+        Device::SetReachable(reachable);
+    }
 
     bool IsOn() override { return on(); }
     void SetOnOff(bool aOn) override
@@ -276,8 +287,6 @@ private:
 
     int connect()
     {
-        SetReachable(false);
-
         curl = curl_easy_init();
         if (!curl)
         {
@@ -300,6 +309,36 @@ private:
         return 0;
     }
 
+    // Exponential backoff (max 5 minutes) until we can reconnect
+    void reconnect()
+    {
+        constexpr int FIVE_MINUTES = 5 * 60;
+        int sleep_seconds          = 5;
+
+        // When connecting to the websocket immediately on boot, it appears to connect fine but the first call to recv fails.
+        // Sleeping instead of immediately reconnecting seems to prevent this issue.
+        std::this_thread::sleep_for(std::chrono::seconds(sleep_seconds));
+
+        while (true)
+        {
+            if (!connect())
+            {
+                ChipLogProgress(DeviceLayer, "[%s] Reconnected!", GetName());
+                wait();
+                recv();
+                // Alert the main thread to listen for this socket now
+                extern int wled_monitor_pipe[2];
+                char buf[1] = { 1 };
+                write(wled_monitor_pipe[1], buf, 1);
+                return;
+            }
+
+            sleep_seconds = std::min(sleep_seconds * 2, FIVE_MINUTES);
+            ChipLogError(DeviceLayer, "[%s] Could not reconnect, trying again in %d seconds...", GetName(), sleep_seconds);
+            std::this_thread::sleep_for(std::chrono::seconds(sleep_seconds));
+        }
+    }
+
     void close()
     {
         if (!curl)
@@ -319,6 +358,14 @@ private:
         {
             ChipLogProgress(DeviceLayer, "Got nothing from websocket, assuming disconnected");
             SetReachable(false);
+            abort();
+            return -1;
+        }
+        if (meta && meta->flags & CURLWS_CLOSE)
+        {
+            ChipLogProgress(DeviceLayer, "Websocket was closed unexpectedly");
+            SetReachable(false);
+            reconnect_thread = std::jthread([=] { this->reconnect(); });
             return -1;
         }
         if (result == CURLE_AGAIN)
@@ -360,9 +407,9 @@ private:
             SetName(led_info.name.c_str());
         }
 
-        std::cout << "RGB Support: " << SUPPORTS_RGB(led_state.capabilities) << std::endl;
-        std::cout << "White Support: " << SUPPORTS_WHITE_CHANNEL(led_state.capabilities) << std::endl;
-        std::cout << "Color temp Support: " << SUPPORTS_COLOR_TEMPERATURE(led_state.capabilities) << std::endl;
+        // std::cout << "RGB Support: " << SUPPORTS_RGB(led_state.capabilities) << std::endl;
+        // std::cout << "White Support: " << SUPPORTS_WHITE_CHANNEL(led_state.capabilities) << std::endl;
+        // std::cout << "Color temp Support: " << SUPPORTS_COLOR_TEMPERATURE(led_state.capabilities) << std::endl;
 
         if (SUPPORTS_RGB(led_state.capabilities))
         {
@@ -468,6 +515,7 @@ private:
     CURL * curl;
     led_state led_state;
     led_info led_info;
+    std::jthread reconnect_thread;
 
     Json::Reader reader;
     Json::FastWriter writer;

@@ -941,7 +941,7 @@ bool kbhit()
     return byteswaiting > 0;
 }
 
-int pipefd[2];
+int wled_monitor_pipe[2];
 
 void * wled_monitoring_thread(void * context)
 {
@@ -952,13 +952,16 @@ void * wled_monitoring_thread(void * context)
     while (true)
     {
         FD_ZERO(&rfds);
-        FD_SET(pipefd[0], &rfds);
-        nfds = pipefd[0];
+        FD_SET(wled_monitor_pipe[0], &rfds);
+        nfds = wled_monitor_pipe[0];
 
         for (auto & light : gLights)
         {
-            FD_SET(light->socket(), &rfds);
-            nfds = std::max(nfds, light->socket());
+            if (light->IsReachable())
+            {
+                FD_SET(light->socket(), &rfds);
+                nfds = std::max(nfds, light->socket());
+            }
         }
 
         result = select(nfds + 1, &rfds, nullptr, nullptr, nullptr);
@@ -968,11 +971,11 @@ void * wled_monitoring_thread(void * context)
             abort();
         }
 
-        if (FD_ISSET(pipefd[0], &rfds))
+        if (FD_ISSET(wled_monitor_pipe[0], &rfds))
         {
             char buf[1];
             // Don't care what it is, just breaking out of select
-            read(pipefd[0], &buf, 1);
+            read(wled_monitor_pipe[0], &buf, 1);
         }
 
         for (auto & light : gLights)
@@ -1029,7 +1032,7 @@ void * bridge_polling_thread(void * context)
                     num_lights++;
                     // Tell the monitoring thread there is a new WLED device
                     char buf[1] = { 1 };
-                    write(pipefd[1], buf, 1);
+                    write(wled_monitor_pipe[1], buf, 1);
                 }
             }
             if (ch == 'b')
@@ -1088,9 +1091,16 @@ void ApplicationInit()
 
     gRooms.push_back(&room1);
 
+    CURLcode code = curl_global_init(CURL_GLOBAL_DEFAULT);
+    if (code != CURLE_OK)
+    {
+        printf("%s\n", curl_easy_strerror(code));
+        exit(1);
+    }
+
     int res;
 
-    res = pipe(pipefd);
+    res = pipe(wled_monitor_pipe);
     if (res)
     {
         perror("pipe");

@@ -47,7 +47,7 @@ public:
     virtual ~Device() {}
 
     bool IsReachable();
-    void SetReachable(bool aReachable);
+    virtual void SetReachable(bool aReachable);
     void SetName(const char * szDeviceName);
     void SetLocation(std::string szLocation);
     inline void SetEndpointId(chip::EndpointId id) { mEndpointId = id; };
@@ -67,7 +67,7 @@ private:
     virtual void HandleDeviceChange(Device * device, Device::Changed_t changeMask) = 0;
 
 protected:
-    bool mReachable;
+    bool mReachable = false;
     char mName[kDeviceNameSize];
     std::string mLocation;
     chip::EndpointId mEndpointId;
