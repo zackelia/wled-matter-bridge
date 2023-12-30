@@ -46,6 +46,11 @@ public:
     Device(const char * szDeviceName, std::string szLocation);
     virtual ~Device() {}
 
+    Device(const Device &)              = delete;
+    Device & operator=(const Device &)  = delete;
+    Device(Device && other)             = delete;
+    Device & operator=(Device && other) = delete;
+
     bool IsReachable();
     virtual void SetReachable(bool aReachable);
     void SetName(const char * szDeviceName);
@@ -67,12 +72,12 @@ private:
     virtual void HandleDeviceChange(Device * device, Device::Changed_t changeMask) = 0;
 
 protected:
-    bool mReachable = false;
-    char mName[kDeviceNameSize];
+    bool mReachable             = false;
+    char mName[kDeviceNameSize] = { 0 };
     std::string mLocation;
-    chip::EndpointId mEndpointId;
-    chip::EndpointId mParentEndpointId;
-    std::string mZone;
+    chip::EndpointId mEndpointId       = 0;
+    chip::EndpointId mParentEndpointId = 0;
+    std::string mZone                  = "";
 };
 
 class DeviceOnOff : public Device
@@ -109,7 +114,7 @@ private:
     }
 
 protected:
-    bool mOn;
+    bool mOn = false;
 };
 
 class DeviceDimmable : public DeviceOnOff
@@ -133,7 +138,7 @@ private:
     DeviceCallback_fn mChanged_CB;
 
 protected:
-    uint8_t mLevel;
+    uint8_t mLevel = 0;
 };
 
 class DeviceColorTemperature : public DeviceDimmable, public ColorControlInterface
@@ -158,7 +163,7 @@ private:
     DeviceCallback_fn mChanged_CB;
 
 protected:
-    uint16_t mireds;
+    uint16_t mireds = 0;
 };
 
 class DeviceExtendedColor : public DeviceColorTemperature

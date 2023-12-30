@@ -25,12 +25,9 @@
 
 using namespace chip::app::Clusters::Actions;
 
-Device::Device(const char * szDeviceName, std::string szLocation)
+Device::Device(const char * szDeviceName, std::string szLocation) : mLocation(szLocation)
 {
     chip::Platform::CopyString(mName, szDeviceName);
-    mLocation   = szLocation;
-    mReachable  = false;
-    mEndpointId = 0;
 }
 
 bool Device::IsReachable()
@@ -84,10 +81,7 @@ void Device::SetLocation(std::string szLocation)
     }
 }
 
-DeviceOnOff::DeviceOnOff(const char * szDeviceName, std::string szLocation) : Device(szDeviceName, szLocation)
-{
-    mOn = false;
-}
+DeviceOnOff::DeviceOnOff(const char * szDeviceName, std::string szLocation) : Device(szDeviceName, szLocation) {}
 
 bool DeviceOnOff::IsOn()
 {
@@ -127,10 +121,7 @@ void DeviceOnOff::HandleDeviceChange(Device * device, Device::Changed_t changeMa
     }
 }
 
-DeviceDimmable::DeviceDimmable(const char * szDeviceName, std::string szLocation) : DeviceOnOff(szDeviceName, szLocation)
-{
-    mLevel = 0;
-}
+DeviceDimmable::DeviceDimmable(const char * szDeviceName, std::string szLocation) : DeviceOnOff(szDeviceName, szLocation) {}
 
 uint8_t DeviceDimmable::Level()
 {
@@ -166,9 +157,7 @@ void DeviceDimmable::HandleDeviceChange(Device * device, Device::Changed_t chang
 
 DeviceColorTemperature::DeviceColorTemperature(const char * szDeviceName, std::string szLocation) :
     DeviceDimmable(szDeviceName, szLocation)
-{
-    mMireds = 0;
-}
+{}
 
 uint16_t DeviceColorTemperature::Capabilities()
 {
@@ -209,10 +198,7 @@ void DeviceColorTemperature::HandleDeviceChange(Device * device, Device::Changed
 
 DeviceExtendedColor::DeviceExtendedColor(const char * szDeviceName, std::string szLocation) :
     DeviceColorTemperature(szDeviceName, szLocation)
-{
-    mHue        = 0;
-    mSaturation = 0;
-}
+{}
 
 uint16_t DeviceExtendedColor::Capabilities()
 {

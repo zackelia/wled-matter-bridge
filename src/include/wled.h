@@ -60,24 +60,6 @@ public:
         recv();
     }
 
-    // No copying!
-    WLED(const WLED &)             = delete;
-    WLED & operator=(const WLED &) = delete;
-
-    // TODO: Add these back
-    // WLED(WLED && other) noexcept
-    // {
-    //     this->curl      = std::exchange(other.curl, nullptr);
-    //     this->led_state = std::exchange(other.led_state, { 0 });
-    // }
-
-    // WLED & operator=(WLED && other) noexcept
-    // {
-    //     std::swap(this->curl, other.curl);
-    //     std::swap(this->led_state, other.led_state);
-    //     return *this;
-    // }
-
     virtual ~WLED() noexcept
     {
         // TODO: (void)curl_ws_send(curl, "", 0, &sent, 0, CURLWS_CLOSE);
