@@ -123,11 +123,12 @@ public:
     uint16_t Capabilities() override
     {
         int caps = 0;
-        if (SUPPORTS_RGB(led_state.capabilities))
+        // There doesn't seem to be a way in Matter to control a white channel
+        if (SUPPORTS_RGB(led_info.capabilities))
         {
             caps += static_cast<int>(chip::app::Clusters::ColorControl::ColorCapabilities::kHueSaturationSupported);
         }
-        if (SUPPORTS_COLOR_TEMPERATURE(led_state.capabilities))
+        if (SUPPORTS_COLOR_TEMPERATURE(led_info.capabilities))
         {
             caps += static_cast<int>(chip::app::Clusters::ColorControl::ColorCapabilities::kColorTemperatureSupported);
         }
@@ -197,6 +198,11 @@ private:
         root["seg"]["col"][0].insert(0, led_state.rgb.r);
         root["seg"]["col"][0].insert(1, led_state.rgb.g);
         root["seg"]["col"][0].insert(2, led_state.rgb.b);
+        if (SUPPORTS_WHITE_CHANNEL(led_info.capabilities))
+        {
+            root["seg"]["col"].append(Json::arrayValue);
+            root["seg"]["col"][0].insert(3, led_state.white);
+        }
         send(writer.write(root));
     }
 
@@ -214,6 +220,11 @@ private:
         root["seg"]["col"][0].insert(0, led_state.rgb.r);
         root["seg"]["col"][0].insert(1, led_state.rgb.g);
         root["seg"]["col"][0].insert(2, led_state.rgb.b);
+        if (SUPPORTS_WHITE_CHANNEL(led_info.capabilities))
+        {
+            root["seg"]["col"].append(Json::arrayValue);
+            root["seg"]["col"][0].insert(3, led_state.white);
+        }
         send(writer.write(root));
     }
 
@@ -337,10 +348,10 @@ private:
 
         led_state.on = root["state"]["on"].asBool();
         // Matter max level is 254, WLED is 255
-        led_state.brightness   = static_cast<uint8_t>(root["state"]["bri"].asUInt());
-        led_state.brightness   = std::min(led_state.brightness, static_cast<uint8_t>(254));
-        led_state.capabilities = root["info"]["leds"]["lc"].asInt();
+        led_state.brightness = static_cast<uint8_t>(root["state"]["bri"].asUInt());
+        led_state.brightness = std::min(led_state.brightness, static_cast<uint8_t>(254));
 
+        led_info.capabilities  = root["info"]["leds"]["lc"].asInt();
         led_info.name          = root["info"]["name"].asString();
         led_info.serial_number = root["info"]["mac"].asString();
         led_info.model         = root["info"]["arch"].asString() + " v" + root["info"]["ver"].asString();
@@ -354,21 +365,23 @@ private:
         // std::cout << "White Support: " << SUPPORTS_WHITE_CHANNEL(led_state.capabilities) << std::endl;
         // std::cout << "Color temp Support: " << SUPPORTS_COLOR_TEMPERATURE(led_state.capabilities) << std::endl;
 
-        if (SUPPORTS_RGB(led_state.capabilities))
-        {
-            auto colors  = root["state"]["seg"][0]["col"];
-            auto primary = colors[0];
+        auto segment = root["state"]["seg"][0];
+        auto primary = segment["col"][0];
 
+        if (SUPPORTS_RGB(led_info.capabilities))
+        {
             led_state.rgb.r = static_cast<uint8_t>(primary[0].asInt());
             led_state.rgb.g = static_cast<uint8_t>(primary[1].asInt());
             led_state.rgb.b = static_cast<uint8_t>(primary[2].asInt());
-
-            led_state.hsv = RgbToHsv(led_state.rgb);
+            led_state.hsv   = RgbToHsv(led_state.rgb);
         }
 
-        if (SUPPORTS_COLOR_TEMPERATURE(led_state.capabilities))
+        if (SUPPORTS_WHITE_CHANNEL(led_info.capabilities))
+            led_state.white = static_cast<uint8_t>(primary[3].asInt());
+
+        if (SUPPORTS_COLOR_TEMPERATURE(led_info.capabilities))
         {
-            uint16_t cct = static_cast<uint16_t>(root["state"]["seg"][0]["cct"].asUInt());
+            uint16_t cct = static_cast<uint16_t>(segment["cct"].asUInt());
             if (cct >= 1900 && cct <= 10091) // Kelvin instead of relative, need to convert
             {
                 // TODO: Does this ever actually happen?
@@ -439,14 +452,15 @@ private:
     {
         bool on;
         uint8_t brightness;
-        int capabilities;
         uint8_t cct;
         RgbColor rgb;
         HsvColor hsv;
+        uint8_t white;
     };
 
     struct led_info
     {
+        int capabilities;
         std::string name;
         std::string manufacturer = "Aircookie/WLED";
         std::string serial_number;
