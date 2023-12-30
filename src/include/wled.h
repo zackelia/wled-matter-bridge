@@ -110,45 +110,6 @@ public:
         DeviceExtendedColor::SetSaturation(led_state.hsv.s);
     }
 
-    int ping() noexcept
-    {
-        char payload[5] = "ping";
-        send("ping");
-
-        if (!wait())
-        {
-            return -1;
-        }
-
-        size_t rlen;
-        const struct curl_ws_frame * meta;
-        char buffer[256];
-        int result = curl_ws_recv(curl, buffer, sizeof(buffer), &rlen, &meta);
-        if (result != CURLE_OK)
-        {
-            if (meta->flags & CURLWS_TEXT)
-            {
-                int same = 0;
-                std::cout << "ws: got PONG back" << std::endl;
-                if (rlen == strlen(payload))
-                {
-                    if (!memcmp(payload, buffer, rlen))
-                    {
-                        std::cout << "ws: got the same payload back" << std::endl;
-                        same = 1;
-                    }
-                }
-                if (!same)
-                    std::cout << "ws: did NOT get the same payload back" << std::endl;
-            }
-            else
-            {
-                fprintf(stderr, "recv_pong: got %u bytes rflags %x\n", (int) rlen, meta->flags);
-            }
-        }
-        return 0;
-    }
-
     inline std::string GetManufacturer() override { return led_info.manufacturer; }
     inline std::string GetSerialNumber() override { return led_info.serial_number; }
     inline std::string GetModel() override { return led_info.model; }
