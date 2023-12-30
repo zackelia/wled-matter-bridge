@@ -47,6 +47,10 @@ executable("chip-bridge-app") {
     "-DABORT_ON_UNHANDLED_ATTRIBUTE=0",
   ]
 
+  ldflags = [
+    "-fuse-ld=lld",
+  ]
+
   include_dirs = [
     "include",
     "//third_party/curl/repo/include/",
