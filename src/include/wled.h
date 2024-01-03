@@ -17,8 +17,10 @@
  */
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <future>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -169,21 +171,18 @@ private:
         // Matter max level is 254, WLED is 255
         brightness = std::min(brightness, static_cast<uint8_t>(254));
         Json::Value root;
-        // Matter sets brightness after setting a light to off. WLED will interpret this as turning the light back on which is
-        // unintended. Send the `on` state at the same time to prevent this.
-        root["on"]  = on();
-        root["bri"] = brightness;
-        send(writer.write(root));
+        root["bri"]          = brightness;
         led_state.brightness = brightness;
+        pipeline_send(root);
     }
 
     void set_on(bool on) noexcept
     {
         Json::Value root;
         root["on"] = on;
-        root["tt"] = 1;
-        send(writer.write(root));
+        // root["tt"]   = 1;
         led_state.on = on;
+        pipeline_send(root);
     }
 
     void set_hue(uint8_t hue) noexcept
@@ -192,9 +191,6 @@ private:
         led_state.hsv.v = led_state.brightness;
         led_state.rgb   = HsvToRgb(led_state.hsv);
         Json::Value root;
-        // Matter sets brightness after setting a light to off. WLED will interpret this as turning the light back on which is
-        // unintended. Send the `on` state at the same time to prevent this.
-        root["on"] = on();
         for (int i = 0; i < 3; i++)
             root["seg"]["col"].append(Json::arrayValue);
         root["seg"]["col"][0].insert(0, led_state.rgb.r);
@@ -205,7 +201,7 @@ private:
             root["seg"]["col"].append(Json::arrayValue);
             root["seg"]["col"][0].insert(3, led_state.white);
         }
-        send(writer.write(root));
+        pipeline_send(root);
     }
 
     void set_saturation(uint8_t saturation) noexcept
@@ -214,9 +210,6 @@ private:
         led_state.hsv.v = led_state.brightness;
         led_state.rgb   = HsvToRgb(led_state.hsv);
         Json::Value root;
-        // Matter sets brightness after setting a light to off. WLED will interpret this as turning the light back on which is
-        // unintended. Send the `on` state at the same time to prevent this.
-        root["on"] = on();
         for (int i = 0; i < 3; i++)
             root["seg"]["col"].append(Json::arrayValue);
         root["seg"]["col"][0].insert(0, led_state.rgb.r);
@@ -227,18 +220,15 @@ private:
             root["seg"]["col"].append(Json::arrayValue);
             root["seg"]["col"][0].insert(3, led_state.white);
         }
-        send(writer.write(root));
+        pipeline_send(root);
     }
 
     void set_cct(uint8_t cct) noexcept
     {
         Json::Value root;
-        // Matter sets brightness after setting a light to off. WLED will interpret this as turning the light back on which is
-        // unintended. Send the `on` state at the same time to prevent this.
-        root["on"]         = on();
         root["seg"]["cct"] = cct;
-        send(writer.write(root));
-        led_state.cct = cct;
+        led_state.cct      = cct;
+        pipeline_send(root);
     }
 
     int connect()
@@ -408,6 +398,7 @@ private:
             std::cerr << "curl_ws_send: " << curl_easy_strerror(result) << std::endl;
             abort();
         }
+        ChipLogProgress(DeviceLayer, ">>>>>>>>>>>>>>>>>>>>> %s", data.c_str());
 
         // TODO: I think there is a race condition here if an update comes before the response is received e.g.
         // -> we send message
@@ -416,6 +407,46 @@ private:
         recv(true);
 
         return (int) result;
+    }
+
+    void update_json(Json::Value & a)
+    {
+        for (const auto & key : a.getMemberNames())
+        {
+            // Only top-level keys!
+            if (key == "cct" || key == "col")
+                continue;
+
+            if (a[key].type() == Json::objectValue && pipeline_data[key].type() == Json::objectValue)
+            {
+                update_json(a[key]);
+            }
+            else
+            {
+                pipeline_data[key] = a[key];
+            }
+        }
+    }
+
+    void pipeline_send(Json::Value root) noexcept
+    {
+        {
+            std::lock_guard guard(pipeline_mutex);
+            update_json(root);
+        }
+
+        using namespace std::chrono_literals;
+        if (pipeline_future.valid() && pipeline_future.wait_for(0s) != std::future_status::ready)
+            return;
+
+        pipeline_future = std::async(std::launch::async, [&] {
+            std::this_thread::sleep_for(0.05s);
+            {
+                std::lock_guard guard(pipeline_mutex);
+                send(writer.write(pipeline_data));
+                pipeline_data = Json::Value();
+            }
+        });
     }
 
     int wait() const noexcept
@@ -476,6 +507,10 @@ private:
     led_info led_info;
     std::jthread reconnect_thread;
     std::string ip;
+
+    std::future<void> pipeline_future;
+    Json::Value pipeline_data;
+    std::mutex pipeline_mutex;
 
     Json::Reader reader;
     Json::FastWriter writer;
