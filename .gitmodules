@@ -7,3 +7,6 @@
 [submodule "third_party/jthread"]
 	path = third_party/jthread/repo
 	url = https://github.com/josuttis/jthread
+[submodule "third_party/mdns"]
+	path = third_party/mdns/repo
+	url = https://github.com/mjansson/mdns

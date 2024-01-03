@@ -26,6 +26,7 @@ executable("wled-matter-bridge") {
     "include/Device.h",
     "include/main.h",
     "main.cpp",
+    "mdns.cpp",
   ]
 
   deps = [
@@ -34,6 +35,7 @@ executable("wled-matter-bridge") {
     "${chip_root}/src/lib",
     "${chip_root}/third_party/jsoncpp",
     "//third_party/jthread",
+    "//third_party/mdns",
   ]
 
   libs = [
@@ -45,6 +47,7 @@ executable("wled-matter-bridge") {
     "-Wconversion",
     # Should only be set to 1 for development
     "-DABORT_ON_UNHANDLED_ATTRIBUTE=0",
+    "-DENABLE_MDNS=1",
   ]
 
   ldflags = [

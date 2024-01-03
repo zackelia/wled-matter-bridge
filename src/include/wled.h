@@ -40,12 +40,12 @@
 class WLED : public DeviceExtendedColor
 {
 public:
-    WLED(std::string_view ip, std::string szLocation)
-    noexcept : DeviceExtendedColor(("WLED " + std::string(ip)).c_str(), szLocation)
+    WLED(std::string_view aIp, std::string szLocation)
+    noexcept : DeviceExtendedColor(("WLED " + std::string(aIp)).c_str(), szLocation), ip(aIp)
     {
         websocket_addr = [&]() {
             std::string temp = "ws://";
-            temp.append(ip);
+            temp.append(aIp);
             temp.append("/ws");
             return temp;
         }();
@@ -95,6 +95,8 @@ public:
     inline std::string GetManufacturer() override { return led_info.manufacturer; }
     inline std::string GetSerialNumber() override { return led_info.serial_number; }
     inline std::string GetModel() override { return led_info.model; }
+
+    inline std::string GetIP() { return ip; }
 
     void SetReachable(bool reachable) override
     {
@@ -473,6 +475,7 @@ private:
     led_state led_state;
     led_info led_info;
     std::jthread reconnect_thread;
+    std::string ip;
 
     Json::Reader reader;
     Json::FastWriter writer;

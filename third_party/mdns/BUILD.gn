@@ -1,0 +1,7 @@
+config("mdns_config") {
+  include_dirs = [ "repo" ]
+}
+
+source_set("mdns") {
+    public_configs = [ ":mdns_config" ]
+}

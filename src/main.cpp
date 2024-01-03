@@ -56,6 +56,7 @@
 #include <sys/select.h>
 #include <vector>
 
+#include "mdns.hpp"
 #include "wled.h"
 // TODO: Delete when mDNS is done
 #include "private.h"
@@ -73,6 +74,8 @@ namespace {
 const int kNodeLabelSize = 32;
 // Current ZCL implementation of Struct uses a max-size array of 254 bytes
 const int kDescriptorAttributeArraySize = 254;
+
+const int MDNS_TIMEOUT = 300;
 
 EndpointId gCurrentEndpointId;
 EndpointId gFirstDynamicEndpointId;
@@ -226,6 +229,7 @@ DECLARE_DYNAMIC_CLUSTER(Identify::Id, identifyAttrs, identifyIncomingCommands, n
 // Declare Bridged Light endpoint
 DECLARE_DYNAMIC_ENDPOINT(bridgedLightEndpoint, bridgedLightClusters);
 
+wled::MDNS * mdns;
 std::vector<WLED *> gLights;
 std::vector<std::array<DataVersion, ArraySize(bridgedLightClusters)>> gDataVersions;
 
@@ -991,6 +995,76 @@ void * wled_monitoring_thread(void * context)
     return nullptr;
 }
 
+bool add_wled(std::string ip)
+{
+    // Check if the IP is already known
+    for (auto & device : gLights)
+    {
+        if (device->GetIP() == ip)
+            return true;
+    }
+
+    // Otherwise, create a new WLED device
+    auto light = new WLED(ip, "Office");
+    ChipLogProgress(DeviceLayer, "Adding WLED: %s (%s)", light->GetName(), light->GetIP().c_str());
+    // TODO: Handle this a little more elegantly
+    light->DeviceOnOff::SetChangeCallback(&HandleDeviceOnOffStatusChanged);
+    light->DeviceDimmable::SetChangeCallback(&HandleDeviceDimmableStatusChanged);
+    light->DeviceColorTemperature::SetChangeCallback(&HandleDeviceColorTemperatureStatusChanged);
+    light->DeviceExtendedColor::SetChangeCallback(&HandleDeviceExtendedColorStatusChanged);
+    gLights.push_back(light);
+    gDataVersions.push_back({ 0 });
+    size_t num_lights = gLights.size() - 1;
+
+    int ret = AddDeviceEndpoint(gLights.at(num_lights), &bridgedLightEndpoint,
+                                Span<const EmberAfDeviceType>(gBridgedExtendedColorDeviceTypes),
+                                Span<DataVersion>(gDataVersions.at(num_lights)), 1);
+    if (ret < 0)
+        return false;
+
+    // Tell the monitoring thread there is a new WLED device
+    char buf[1] = { 1 };
+    write(wled_monitor_pipe[1], buf, 1);
+
+    return true;
+}
+
+void * mdns_monitoring_thread(void * context)
+{
+    mdns = new wled::MDNS();
+
+    while (true)
+    {
+        ChipLogProgress(DeviceLayer, "Sending mDNS query");
+        mdns->send_query();
+
+        while (true)
+        {
+            fd_set rfds;
+            FD_ZERO(&rfds);
+            FD_SET(mdns->socket(), &rfds);
+            struct timeval tv = { .tv_sec = MDNS_TIMEOUT, .tv_usec = 0 };
+
+            int ret = select(mdns->socket() + 1, &rfds, NULL, NULL, &tv);
+            if (ret < 0)
+            {
+                ChipLogError(DeviceLayer, "select issue");
+                abort();
+            }
+
+            // Timeout
+            if (ret == 0)
+                break;
+
+            std::string ip = mdns->recv_query();
+            if (!ip.empty())
+                add_wled(ip);
+        }
+    }
+
+    return nullptr;
+}
+
 void * bridge_polling_thread(void * context)
 {
     size_t num_lights = 0;
@@ -1126,6 +1200,20 @@ void ApplicationInit()
             exit(1);
         }
     }
+
+#if ENABLE_MDNS
+    {
+        pthread_t mdns_thread;
+        res = pthread_create(&mdns_thread, nullptr, mdns_monitoring_thread, nullptr);
+        if (res)
+        {
+            printf("Error creating MDNS thread: %d\n", res);
+            exit(1);
+        }
+    }
+#else
+    ChipLogProgress(DeviceLayer, "mDNS querying disabled!");
+#endif
 }
 
 void ApplicationShutdown()
