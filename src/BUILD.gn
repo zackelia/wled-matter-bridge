@@ -27,6 +27,7 @@ executable("wled-matter-bridge") {
     "include/main.h",
     "main.cpp",
     "mdns.cpp",
+    "kvs.cpp",
   ]
 
   deps = [

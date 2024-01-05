@@ -1,6 +1,6 @@
 #pragma once
 
-#define CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT 16
+#define CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT 32
 
 #define FATCONFDIR "/tmp/chip"
 #define SYSCONFDIR "/tmp/chip"

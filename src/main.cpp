@@ -56,6 +56,7 @@
 #include <sys/select.h>
 #include <vector>
 
+#include "kvs.hpp"
 #include "mdns.hpp"
 #include "wled.h"
 // TODO: Delete when mDNS is done
@@ -77,7 +78,6 @@ const int kDescriptorAttributeArraySize = 254;
 
 const int MDNS_TIMEOUT = 300;
 
-EndpointId gCurrentEndpointId;
 EndpointId gFirstDynamicEndpointId;
 Device * gDevices[CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT];
 std::vector<Room *> gRooms;
@@ -229,9 +229,10 @@ DECLARE_DYNAMIC_CLUSTER(Identify::Id, identifyAttrs, identifyIncomingCommands, n
 // Declare Bridged Light endpoint
 DECLARE_DYNAMIC_ENDPOINT(bridgedLightEndpoint, bridgedLightClusters);
 
+wled::KVS * kvs;
 wled::MDNS * mdns;
 std::vector<WLED *> gLights;
-std::vector<std::array<DataVersion, ArraySize(bridgedLightClusters)>> gDataVersions;
+std::array<std::array<DataVersion, ArraySize(bridgedLightClusters)>, CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT> gDataVersions;
 
 Room room1("Room 1", 0xE001, Actions::EndpointListTypeEnum::kRoom, true);
 
@@ -254,53 +255,45 @@ Action action1(0x1001, "Room 1 On", Actions::ActionTypeEnum::kAutomation, 0xE001
 
 // ---------------------------------------------------------------------------
 
-int AddDeviceEndpoint(Device * dev, EmberAfEndpointType * ep, const Span<const EmberAfDeviceType> & deviceTypeList,
+int AddDeviceEndpoint(uint8_t index, Device * dev, EmberAfEndpointType * ep, const Span<const EmberAfDeviceType> & deviceTypeList,
                       const Span<DataVersion> & dataVersionStorage, chip::EndpointId parentEndpointId = chip::kInvalidEndpointId)
 {
-    uint8_t index = 0;
-    while (index < CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT)
+    if (nullptr == gDevices[index])
     {
-        if (nullptr == gDevices[index])
+        gDevices[index] = dev;
+        EmberAfStatus ret;
+        while (true)
         {
-            gDevices[index] = dev;
-            EmberAfStatus ret;
-            while (true)
+            // Todo: Update this to schedule the work rather than use this lock
+            DeviceLayer::StackLock lock;
+            dev->SetEndpointId(index + gFirstDynamicEndpointId);
+            dev->SetParentEndpointId(parentEndpointId);
+            ret = emberAfSetDynamicEndpoint(index, index + gFirstDynamicEndpointId, ep, dataVersionStorage, deviceTypeList,
+                                            parentEndpointId);
+            if (ret == EMBER_ZCL_STATUS_SUCCESS)
             {
-                // Todo: Update this to schedule the work rather than use this lock
-                DeviceLayer::StackLock lock;
-                dev->SetEndpointId(gCurrentEndpointId);
-                dev->SetParentEndpointId(parentEndpointId);
-                ret =
-                    emberAfSetDynamicEndpoint(index, gCurrentEndpointId, ep, dataVersionStorage, deviceTypeList, parentEndpointId);
-                if (ret == EMBER_ZCL_STATUS_SUCCESS)
-                {
-                    ChipLogProgress(DeviceLayer, "Added device %s to dynamic endpoint %d (index=%d)", dev->GetName(),
-                                    gCurrentEndpointId, index);
-                    // TODO: This won't work for every device! Does that matter?
-                    // Seems to be tracked here: https://github.com/orgs/project-chip/projects/85
-                    emberAfLevelControlClusterServerInitCallback(dev->GetEndpointId());
-                    emberAfColorControlClusterServerInitCallback(dev->GetEndpointId());
-                    return index;
-                }
-                if (ret != EMBER_ZCL_STATUS_DUPLICATE_EXISTS)
-                {
-                    ChipLogError(DeviceLayer, "Got unhandled error: %d", ret);
-                    abort();
-                    return -1;
-                }
-                // Handle wrap condition
-                if (++gCurrentEndpointId < gFirstDynamicEndpointId)
-                {
-                    gCurrentEndpointId = gFirstDynamicEndpointId;
-                }
+                ChipLogProgress(DeviceLayer, "Added device %s to dynamic endpoint %d (index=%d)", dev->GetName(),
+                                index + gFirstDynamicEndpointId, index);
+                // TODO: This won't work for every device! Does that matter?
+                // Seems to be tracked here: https://github.com/orgs/project-chip/projects/85
+                emberAfLevelControlClusterServerInitCallback(dev->GetEndpointId());
+                emberAfColorControlClusterServerInitCallback(dev->GetEndpointId());
+                return index;
+            }
+            if (ret != EMBER_ZCL_STATUS_DUPLICATE_EXISTS)
+            {
+                ChipLogError(DeviceLayer, "Got unhandled error: %d", ret);
+                abort();
+                return -1;
             }
         }
-        index++;
     }
-    ChipLogProgress(DeviceLayer, "Failed to add dynamic endpoint: No endpoints available!");
+
+    ChipLogError(DeviceLayer, "Could not add device at index %d, it appears already used!", index);
     return -1;
 }
 
+// TODO: This needs to be modified later if we intend to call it
 int RemoveDeviceEndpoint(Device * dev)
 {
     uint8_t index = 0;
@@ -995,7 +988,39 @@ void * wled_monitoring_thread(void * context)
     return nullptr;
 }
 
-bool add_wled(std::string ip)
+bool add_wled(uint8_t index, WLED * device)
+{
+    if (index >= CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT - gFirstDynamicEndpointId)
+    {
+        ChipLogError(DeviceLayer, "Could not add WLED (%s)", device->GetIP().c_str());
+        return false;
+    }
+
+    ChipLogProgress(DeviceLayer, "Adding WLED: %s (%s)", device->GetName(), device->GetIP().c_str());
+    // TODO: Handle this a little more elegantly
+    device->DeviceOnOff::SetChangeCallback(&HandleDeviceOnOffStatusChanged);
+    device->DeviceDimmable::SetChangeCallback(&HandleDeviceDimmableStatusChanged);
+    device->DeviceColorTemperature::SetChangeCallback(&HandleDeviceColorTemperatureStatusChanged);
+    device->DeviceExtendedColor::SetChangeCallback(&HandleDeviceExtendedColorStatusChanged);
+    gDataVersions[index] = { 0 };
+
+    int ret =
+        AddDeviceEndpoint(index, device, &bridgedLightEndpoint, Span<const EmberAfDeviceType>(gBridgedExtendedColorDeviceTypes),
+                          Span<DataVersion>(gDataVersions[index]), 1);
+    if (ret < 0)
+        return false;
+
+    kvs->store_wled(index, device);
+    gLights.push_back(device);
+
+    // Tell the monitoring thread there is a new WLED device
+    char buf[1] = { 1 };
+    write(wled_monitor_pipe[1], buf, 1);
+
+    return true;
+}
+
+bool add_wled_by_ip(std::string ip)
 {
     // Check if the IP is already known
     for (auto & device : gLights)
@@ -1004,29 +1029,20 @@ bool add_wled(std::string ip)
             return true;
     }
 
-    // Otherwise, create a new WLED device
+    uint8_t next_endpoint                             = CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT;
+    DataVersion temp[ArraySize(bridgedLightClusters)] = {};
+
+    for (uint8_t i = (uint8_t) gFirstDynamicEndpointId; i < CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT; i++)
+    {
+        if (memcmp(gDataVersions.at(i).data(), temp, sizeof(temp)) == 0)
+        {
+            next_endpoint = i;
+            break;
+        }
+    }
+
     auto light = new WLED(ip, "Office");
-    ChipLogProgress(DeviceLayer, "Adding WLED: %s (%s)", light->GetName(), light->GetIP().c_str());
-    // TODO: Handle this a little more elegantly
-    light->DeviceOnOff::SetChangeCallback(&HandleDeviceOnOffStatusChanged);
-    light->DeviceDimmable::SetChangeCallback(&HandleDeviceDimmableStatusChanged);
-    light->DeviceColorTemperature::SetChangeCallback(&HandleDeviceColorTemperatureStatusChanged);
-    light->DeviceExtendedColor::SetChangeCallback(&HandleDeviceExtendedColorStatusChanged);
-    gLights.push_back(light);
-    gDataVersions.push_back({ 0 });
-    size_t num_lights = gLights.size() - 1;
-
-    int ret = AddDeviceEndpoint(gLights.at(num_lights), &bridgedLightEndpoint,
-                                Span<const EmberAfDeviceType>(gBridgedExtendedColorDeviceTypes),
-                                Span<DataVersion>(gDataVersions.at(num_lights)), 1);
-    if (ret < 0)
-        return false;
-
-    // Tell the monitoring thread there is a new WLED device
-    char buf[1] = { 1 };
-    write(wled_monitor_pipe[1], buf, 1);
-
-    return true;
+    return add_wled(next_endpoint, light);
 }
 
 void * mdns_monitoring_thread(void * context)
@@ -1058,91 +1074,8 @@ void * mdns_monitoring_thread(void * context)
 
             std::string ip = mdns->recv_query();
             if (!ip.empty())
-                add_wled(ip);
+                add_wled_by_ip(ip);
         }
-    }
-
-    return nullptr;
-}
-
-void * bridge_polling_thread(void * context)
-{
-    size_t num_lights = 0;
-
-    while (true)
-    {
-        if (kbhit())
-        {
-            int ch = getchar();
-
-            // Commands used for the actions bridge test plan.
-            if (ch == '4' && gLights.size() > 0)
-            {
-                // TC-BR-2 step 4, Remove Light 1
-                num_lights--;
-                auto light = gLights.at(0);
-                RemoveDeviceEndpoint(light);
-                gLights.erase(gLights.begin());
-                gDataVersions.erase(gDataVersions.begin());
-                delete light;
-            }
-            if (ch == '5' && gLights.size() < CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT)
-            {
-                for (int i = 0; i < NUM_WLEDS; i++)
-                {
-                    auto light = new WLED(wled_instances[i], "Office");
-                    // TODO: Handle this a little more elegantly
-                    light->DeviceOnOff::SetChangeCallback(&HandleDeviceOnOffStatusChanged);
-                    light->DeviceDimmable::SetChangeCallback(&HandleDeviceDimmableStatusChanged);
-                    light->DeviceColorTemperature::SetChangeCallback(&HandleDeviceColorTemperatureStatusChanged);
-                    light->DeviceExtendedColor::SetChangeCallback(&HandleDeviceExtendedColorStatusChanged);
-                    gLights.push_back(light);
-                    gDataVersions.push_back({ 0 });
-
-                    // TC-BR-2 step 5, Add Light 1 back
-                    AddDeviceEndpoint(gLights.at(num_lights), &bridgedLightEndpoint,
-                                      Span<const EmberAfDeviceType>(gBridgedExtendedColorDeviceTypes),
-                                      Span<DataVersion>(gDataVersions.at(num_lights)), 1);
-                    num_lights++;
-                    // Tell the monitoring thread there is a new WLED device
-                    char buf[1] = { 1 };
-                    write(wled_monitor_pipe[1], buf, 1);
-                }
-            }
-            if (ch == 'b')
-            {
-                // TC-BR-3 step 1b, rename lights
-                if (gLights.size())
-                {
-                    gLights.at(0)->SetName("Light 1b");
-                }
-            }
-            if (ch == 'c')
-            {
-                // TC-BR-3 step 2c, change the state of the lights
-                if (gLights.size())
-                {
-                    gLights.at(0)->Toggle();
-                }
-            }
-
-            // Commands used for the actions cluster test plan.
-            if (ch == 'r')
-            {
-                // TC-ACT-2.2 step 2c, rename "Room 1"
-                room1.setName("Room 1 renamed");
-            }
-            if (ch == 'm')
-            {
-                // TC-ACT-2.2 step 3c, rename "Turn on Room 1 lights"
-                action1.setName("Turn On Room 1");
-            }
-
-            continue;
-        }
-
-        // Sleep to avoid tight loop reading commands
-        usleep(POLL_INTERVAL_MS * 1000);
     }
 
     return nullptr;
@@ -1157,7 +1090,6 @@ void ApplicationInit()
     // will be the next consecutive endpoint id after the last fixed endpoint.
     gFirstDynamicEndpointId = static_cast<chip::EndpointId>(
         static_cast<int>(emberAfEndpointFromIndex(static_cast<uint16_t>(emberAfFixedEndpointCount() - 1))) + 1);
-    gCurrentEndpointId = gFirstDynamicEndpointId;
 
     // Disable last fixed endpoint, which is used as a placeholder for all of the
     // supported clusters so that ZAP will generated the requisite code.
@@ -1172,6 +1104,21 @@ void ApplicationInit()
         exit(1);
     }
 
+    kvs = new wled::KVS(CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT);
+
+    auto stored_devices = kvs->get_wleds();
+    for (auto & [index, device] : stored_devices)
+    {
+        if (add_wled(index, device) == true)
+        {
+            ChipLogProgress(DeviceLayer, "Added WLED (%s) at index %d", device->GetName(), index);
+        }
+        else
+        {
+            ChipLogError(DeviceLayer, "Could not add WLED (%s) at index %d", device->GetName(), index);
+        }
+    }
+
     int res;
 
     res = pipe(wled_monitor_pipe);
@@ -1179,16 +1126,6 @@ void ApplicationInit()
     {
         perror("pipe");
         exit(1);
-    }
-
-    {
-        pthread_t poll_thread;
-        res = pthread_create(&poll_thread, nullptr, bridge_polling_thread, nullptr);
-        if (res)
-        {
-            printf("Error creating polling thread: %d\n", res);
-            exit(1);
-        }
     }
 
     {
