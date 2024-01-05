@@ -300,20 +300,6 @@ private:
         const struct curl_ws_frame * meta;
         char buffer[MAX_WEBSOCKET_BYTES];
         CURLcode result = curl_ws_recv(curl, buffer, sizeof(buffer), &rlen, &meta);
-        if (result == CURLE_GOT_NOTHING)
-        {
-            ChipLogProgress(DeviceLayer, "Got nothing from websocket, assuming disconnected");
-            SetReachable(false);
-            abort();
-            return -1;
-        }
-        if (meta && meta->flags & CURLWS_CLOSE)
-        {
-            ChipLogProgress(DeviceLayer, "Websocket was closed unexpectedly");
-            SetReachable(false);
-            reconnect_thread = std::jthread([=] { this->reconnect(); });
-            return -1;
-        }
         if (result == CURLE_AGAIN)
         {
             // Multithreaded programming is hard, we probably already read the intended message
@@ -321,8 +307,21 @@ private:
         }
         if (result != CURLE_OK)
         {
-            std::cerr << "curl_ws_recv: " << curl_easy_strerror(result) << std::endl;
-            abort();
+            if (result == CURLE_GOT_NOTHING)
+            {
+                ChipLogProgress(DeviceLayer, "Got nothing from websocket, unexpectedly disconnected");
+            }
+            else if (meta && meta->flags & CURLWS_CLOSE)
+            {
+                ChipLogProgress(DeviceLayer, "Websocket was closed unexpectedly");
+            }
+            else
+            {
+                ChipLogError(DeviceLayer, "Unknown error: curl_ws_recv - %s", curl_easy_strerror(result));
+            }
+            SetReachable(false);
+            reconnect_thread = std::jthread([=] { this->reconnect(); });
+            return -1;
         }
 
         if (is_response)
