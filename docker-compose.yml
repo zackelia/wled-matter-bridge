@@ -1,0 +1,8 @@
+services:
+  wled-matter-bridge:
+    image: wled-matter-bridge:0.0.1
+    container_name: wled-matter-bridge
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./data:/tmp/chip
