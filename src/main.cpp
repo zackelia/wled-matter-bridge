@@ -59,8 +59,6 @@
 #include "kvs.hpp"
 #include "mdns.hpp"
 #include "wled.h"
-// TODO: Delete when mDNS is done
-#include "private.h"
 
 using namespace chip;
 using namespace chip::app;
