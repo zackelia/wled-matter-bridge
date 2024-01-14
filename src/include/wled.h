@@ -397,6 +397,7 @@ private:
             std::cerr << "curl_ws_send: " << curl_easy_strerror(result) << std::endl;
             abort();
         }
+        data.erase(data.length() - 1); // Strip extraneous new line for logging
         ChipLogProgress(DeviceLayer, ">>>>>>>>>>>>>>>>>>>>> %s", data.c_str());
 
         // TODO: I think there is a race condition here if an update comes before the response is received e.g.

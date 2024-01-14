@@ -779,7 +779,6 @@ EmberAfStatus HandleWriteColorControlAttribute(DeviceColorTemperature * dev, chi
     else if ((attributeId == ColorControl::Attributes::ColorTemperatureMireds::Id) && (dev->IsReachable()))
     {
         uint16_t mireds = *(uint16_t *) buffer;
-        ChipLogProgress(DeviceLayer, "mireds: %d", mireds);
         dev->SetMireds(mireds);
         ChipLogProgress(DeviceLayer, "ColorControl::Attributes::ColorTemperatureMireds: %d", mireds);
     }
