@@ -2,8 +2,8 @@ import argparse
 import sys
 
 # In/out from perspective of the C++ code
-WLED_FIFO_IN = "/tmp/chip/wled-fifo-in"
-WLED_FIFO_OUT = "/tmp/chip/wled-fifo-out"
+WLED_FIFO_IN = "/var/chip/wled-fifo-in"
+WLED_FIFO_OUT = "/var/chip/wled-fifo-out"
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Add/remove devices to bridge")

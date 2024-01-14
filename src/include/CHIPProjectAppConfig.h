@@ -2,10 +2,11 @@
 
 #define CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT 32
 
-#define FATCONFDIR "/tmp/chip"
-#define SYSCONFDIR "/tmp/chip"
-#define LOCALSTATEDIR "/tmp/chip"
-#define CHIP_CONFIG_KVS_PATH "/tmp/chip/chip_kvs"
+#define CHIP_DIR "/var/chip"
+#define FATCONFDIR CHIP_DIR
+#define SYSCONFDIR CHIP_DIR
+#define LOCALSTATEDIR CHIP_DIR
+#define CHIP_CONFIG_KVS_PATH CHIP_DIR "/chip_kvs"
 
 // Found in connectedhomeip/src/include/platform/CHIPDeviceConfig.h
 #define CHIP_DEVICE_CONFIG_DEVICE_VENDOR_NAME "Zack Elia"

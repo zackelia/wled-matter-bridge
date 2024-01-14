@@ -60,7 +60,7 @@ RUN apt update && \
     DEBIAN_FRONTEND=noninteractive apt install -y \
     python3 && \
         libglib2.0-0 && \
-    mkdir /tmp/chip
+    mkdir /var/chip
 
 COPY --from=builder /wled-matter-bridge/src/out/host/wled-matter-bridge /wled-matter-bridge
 COPY --from=builder /wled-matter-bridge/tools /
