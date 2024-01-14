@@ -43,6 +43,8 @@
 #include <pthread.h>
 #include <string>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include "CommissionableInit.h"
 #include "Device.h"
@@ -75,6 +77,9 @@ const int kNodeLabelSize = 32;
 const int kDescriptorAttributeArraySize = 254;
 
 const int MDNS_TIMEOUT = 300;
+
+constexpr const char * WLED_FIFO_IN  = LOCALSTATEDIR "/wled-fifo-in";
+constexpr const char * WLED_FIFO_OUT = LOCALSTATEDIR "/wled-fifo-out";
 
 EndpointId gFirstDynamicEndpointId;
 Device * gDevices[CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT];
@@ -937,6 +942,10 @@ bool kbhit()
 }
 
 int wled_monitor_pipe[2];
+int wled_fifo_in_fd;
+
+bool add_wled_by_ip(std::string ip);
+bool remove_wled_by_ip(std::string ip);
 
 void * wled_monitoring_thread(void * context)
 {
@@ -949,6 +958,9 @@ void * wled_monitoring_thread(void * context)
         FD_ZERO(&rfds);
         FD_SET(wled_monitor_pipe[0], &rfds);
         nfds = wled_monitor_pipe[0];
+
+        FD_SET(wled_fifo_in_fd, &rfds);
+        nfds = std::max(nfds, wled_fifo_in_fd);
 
         for (auto & light : gLights)
         {
@@ -971,6 +983,55 @@ void * wled_monitoring_thread(void * context)
             char buf[1];
             // Don't care what it is, just breaking out of select
             read(wled_monitor_pipe[0], &buf, 1);
+        }
+
+        if (FD_ISSET(wled_fifo_in_fd, &rfds))
+        {
+            int wled_fifo_out_fd = open(WLED_FIFO_OUT, O_WRONLY);
+            if (wled_fifo_out_fd == -1)
+            {
+                perror("open");
+                exit(1);
+            }
+
+            ssize_t read_bytes = 0;
+
+            char operation[1];
+            read_bytes = read(wled_fifo_in_fd, operation, sizeof(operation));
+            if (read_bytes < 0)
+                ChipLogError(DeviceLayer, "Could not read from FIFO");
+
+            char buf[100];
+            read_bytes = read(wled_fifo_in_fd, buf, sizeof(buf));
+            if (read_bytes < 0)
+            {
+                ChipLogError(DeviceLayer, "Could not read from FIFO");
+                if (write(wled_fifo_out_fd, "1", 1) < 1)
+                    ChipLogError(DeviceLayer, "Could not write!");
+            }
+            else
+            {
+                bool success = false;
+                if (operation[0] == '1')
+                {
+                    ChipLogProgress(DeviceLayer, "Adding device: %s", buf);
+                    success = add_wled_by_ip(std::string(buf));
+                }
+                else if (operation[0] == '2')
+                {
+                    ChipLogProgress(DeviceLayer, "Removing device: %s", buf);
+                    success = remove_wled_by_ip(std::string(buf));
+                }
+                else
+                {
+                    ChipLogError(DeviceLayer, "Got unknown operation: %s", operation);
+                }
+
+                if (write(wled_fifo_out_fd, success ? "0" : "1", 1) < 1)
+                    ChipLogError(DeviceLayer, "Could not write!");
+            }
+
+            close(wled_fifo_out_fd);
         }
 
         for (auto & light : gLights)
@@ -1041,6 +1102,53 @@ bool add_wled_by_ip(std::string ip)
 
     auto light = new WLED(ip, "Office");
     return add_wled(next_endpoint, light);
+}
+
+bool remove_wled_by_ip(std::string ip)
+{
+    size_t index         = 0;
+    size_t devices_index = 0;
+    WLED * target        = nullptr;
+
+    // Check if the IP is already known
+    for (; index < gLights.size(); index++)
+    {
+        if (gLights[index]->GetIP() == ip)
+        {
+            target = gLights[index];
+            break;
+        }
+    }
+
+    // Could not find it
+    if (!target)
+        return false;
+
+    for (; devices_index < CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT; devices_index++)
+    {
+        if (gDevices[devices_index] == target)
+        {
+            break;
+        }
+    }
+
+    int result = RemoveDeviceEndpoint(target);
+    if (!result)
+    {
+        ChipLogError(DeviceLayer, "Could not remove endpoint: %s", ip.c_str());
+        return false;
+    }
+
+    gLights.erase(gLights.begin() + (int) index);
+
+    gDataVersions[devices_index] = { 0 };
+    result                       = kvs->delete_wled((uint8_t) devices_index);
+
+    // Tell the monitoring thread there is a new WLED device
+    char buf[1] = { 1 };
+    write(wled_monitor_pipe[1], buf, 1);
+
+    return result;
 }
 
 void * mdns_monitoring_thread(void * context)
@@ -1123,6 +1231,27 @@ void ApplicationInit()
     if (res)
     {
         perror("pipe");
+        exit(1);
+    }
+
+    res = mkfifo(WLED_FIFO_IN, 0600);
+    if (res && errno != EEXIST)
+    {
+        perror("mkfifo");
+        exit(1);
+    }
+
+    res = mkfifo(WLED_FIFO_OUT, 0600);
+    if (res && errno != EEXIST)
+    {
+        perror("mkfifo");
+        exit(1);
+    }
+
+    wled_fifo_in_fd = open(WLED_FIFO_IN, O_RDWR | O_NONBLOCK); // Needs to be R/W or else select will always return
+    if (wled_fifo_in_fd == -1)
+    {
+        perror("open");
         exit(1);
     }
 
