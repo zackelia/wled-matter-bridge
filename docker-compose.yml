@@ -6,3 +6,6 @@ services:
     network_mode: host
     volumes:
       - ./data:/var/chip
+    environment:
+      # Prevent certain devices from being added via mDNS
+      # - WLED_DENY_LIST="192.168.0.100,192.168.0.101"

@@ -53,6 +53,7 @@
 
 #include <array>
 #include <cassert>
+#include <cstring>
 #include <iostream>
 #include <math.h>
 #include <sys/select.h>
@@ -234,6 +235,7 @@ DECLARE_DYNAMIC_ENDPOINT(bridgedLightEndpoint, bridgedLightClusters);
 
 wled::KVS * kvs;
 wled::MDNS * mdns;
+std::vector<std::string> deny_list;
 std::vector<WLED *> gLights;
 std::array<std::array<DataVersion, ArraySize(bridgedLightClusters)>, CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT> gDataVersions;
 
@@ -1087,6 +1089,15 @@ bool add_wled_by_ip(std::string ip)
             return true;
     }
 
+    for (auto & deny_entry : deny_list)
+    {
+        if (deny_entry == ip)
+        {
+            ChipLogError(DeviceLayer, "Not adding %s - it is in the deny list", ip.c_str());
+            return false;
+        }
+    }
+
     uint8_t next_endpoint                             = CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT;
     DataVersion temp[ArraySize(bridgedLightClusters)] = {};
 
@@ -1221,6 +1232,19 @@ void ApplicationInit()
         else
         {
             ChipLogError(DeviceLayer, "Could not add WLED (%s) at index %d", device->GetName(), index);
+        }
+    }
+
+    char * deny_string = std::getenv("WLED_DENY_LIST");
+    if (deny_string)
+    {
+        char * p = strtok(deny_string, ",");
+        while (p != NULL)
+        {
+            auto denied = std::string(p);
+            deny_list.push_back(denied);
+            ChipLogProgress(DeviceLayer, "Added %s to deny list", denied.c_str());
+            p = strtok(NULL, ",");
         }
     }
 
