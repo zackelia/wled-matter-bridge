@@ -443,6 +443,12 @@ private:
             std::this_thread::sleep_for(0.05s);
             {
                 std::lock_guard guard(pipeline_mutex);
+
+                // On start up, Matter will send only a 'level' command but not an 'on' command
+                Json::Value root2;
+                root2["on"] = IsOn();
+                update_json(root2);
+
                 send(writer.write(pipeline_data));
                 pipeline_data = Json::Value();
             }
