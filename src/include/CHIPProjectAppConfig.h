@@ -15,7 +15,4 @@
 #define CHIP_DEVICE_CONFIG_DEVICE_SOFTWARE_VERSION_STRING "0.1.0"
 #define CHIP_DEVICE_CONFIG_DEFAULT_DEVICE_HARDWARE_VERSION_STRING "0.1.0"
 
-// TODO: Is this actually used anywhere? Broken for bridges?
-// #define CHIP_DEVICE_CONFIG_DEVICE_NAME "WLED Matter Bridge"
-
 #include <platform/Linux/CHIPPlatformConfig.h>
