@@ -1,10 +1,5 @@
+#include <future>
 #include <stdint.h>
-
-// TODO: I don't know why this warning is hitting
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-#include <jthread.hpp>
-#pragma GCC diagnostic pop
 
 #include <lib/support/CodeUtils.h>
 
@@ -20,8 +15,13 @@ public:
             // An identify command is already going, don't start another at the same time.
             return;
         }
-        remaining_time   = time;
-        animation_thread = std::jthread([=] { this->AnimateIdentify(); });
+        remaining_time = time;
+
+        using namespace std::chrono_literals;
+        if (animation_future.valid() && animation_future.wait_for(0s) != std::future_status::ready)
+            return;
+
+        animation_future = std::async(std::launch::async, [&] { this->AnimateIdentify(); });
     }
     virtual void AnimateIdentify() = 0;
 
@@ -29,7 +29,7 @@ public:
 
 protected:
     uint16_t remaining_time = 0;
-    std::jthread animation_thread;
+    std::future<void> animation_future;
 };
 
 class ColorControlInterface

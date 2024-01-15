@@ -55,7 +55,11 @@ public:
         if (connect())
         {
             std::cerr << "Could not setup websocket connection" << std::endl;
-            reconnect_thread = std::jthread([=] { this->reconnect(); });
+            using namespace std::chrono_literals;
+            if (reconnect_future.valid() && reconnect_future.wait_for(0s) != std::future_status::ready)
+                return;
+
+            reconnect_future = std::async(std::launch::async, [=] { this->reconnect(); });
             return;
         }
         wait();
@@ -320,7 +324,12 @@ private:
                 ChipLogError(DeviceLayer, "Unknown error: curl_ws_recv - %s", curl_easy_strerror(result));
             }
             SetReachable(false);
-            reconnect_thread = std::jthread([=] { this->reconnect(); });
+
+            using namespace std::chrono_literals;
+            if (reconnect_future.valid() && reconnect_future.wait_for(0s) != std::future_status::ready)
+                return -1;
+
+            reconnect_future = std::async(std::launch::async, [=] { this->reconnect(); });
             return -1;
         }
 
@@ -511,7 +520,7 @@ private:
     CURL * curl;
     led_state led_state;
     led_info led_info;
-    std::jthread reconnect_thread;
+    std::future<void> reconnect_future;
     std::string ip;
 
     std::future<void> pipeline_future;

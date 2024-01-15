@@ -1,7 +1,0 @@
-config("jthread_config") {
-  include_dirs = [ "repo/source" ]
-}
-
-source_set("jthread") {
-    public_configs = [ ":jthread_config" ]
-}
