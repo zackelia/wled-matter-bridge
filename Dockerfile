@@ -52,17 +52,18 @@ RUN cd third_party/connectedhomeip && \
     cd - && \
     cd src && \
     gn gen out/host && \
-    ninja -C out/host
+    ninja -C out/host && \
+    strip out/host/wled-matter-bridge
 
 FROM ubuntu:jammy
 
 RUN apt update && \
     DEBIAN_FRONTEND=noninteractive apt install -y \
-    python3 && \
+        python3 \
         libglib2.0-0 && \
     mkdir /var/chip
 
 COPY --from=builder /wled-matter-bridge/src/out/host/wled-matter-bridge /wled-matter-bridge
-COPY --from=builder /wled-matter-bridge/tools /
+COPY --from=builder /wled-matter-bridge/tools /tools
 
 ENTRYPOINT ["/wled-matter-bridge"]
