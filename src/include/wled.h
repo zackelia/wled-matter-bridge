@@ -114,6 +114,23 @@ public:
         Device::SetReachable(reachable);
     }
 
+    void AnimateIdentify() override
+    {
+        Json::Value root;
+        bool state = !IsOn();
+        do
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                root["on"] = state;
+                root["tt"] = 1;
+                send(writer.write(root));
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                state = !state;
+            }
+        } while (--remaining_time);
+    }
+
     bool IsOn() override { return on(); }
     void SetOnOff(bool aOn) override
     {
@@ -183,8 +200,7 @@ private:
     void set_on(bool on) noexcept
     {
         Json::Value root;
-        root["on"] = on;
-        // root["tt"]   = 1;
+        root["on"]   = on;
         led_state.on = on;
         pipeline_send(root);
     }
