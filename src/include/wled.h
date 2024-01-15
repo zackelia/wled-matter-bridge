@@ -309,7 +309,7 @@ private:
             // Multithreaded programming is hard, we probably already read the intended message
             return 0;
         }
-        if (result != CURLE_OK)
+        if (result != CURLE_OK || (meta && meta->flags & CURLWS_CLOSE))
         {
             if (result == CURLE_GOT_NOTHING)
             {
@@ -317,7 +317,7 @@ private:
             }
             else if (meta && meta->flags & CURLWS_CLOSE)
             {
-                ChipLogProgress(DeviceLayer, "Websocket was closed unexpectedly");
+                ChipLogProgress(DeviceLayer, "Websocket was closed");
             }
             else
             {
