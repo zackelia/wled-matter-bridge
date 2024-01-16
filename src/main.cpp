@@ -27,6 +27,7 @@
 #include <app/ConcreteAttributePath.h>
 #include <app/EventLogging.h>
 #include <app/reporting/reporting.h>
+#include <app/server/OnboardingCodesUtil.h>
 #include <app/util/af-types.h>
 #include <app/util/af.h>
 #include <app/util/attribute-storage.h>
@@ -1023,13 +1024,35 @@ void * wled_monitoring_thread(void * context)
                     ChipLogProgress(DeviceLayer, "Removing device: %s", buf);
                     success = remove_wled_by_ip(std::string(buf));
                 }
+                else if (operation[0] == '3')
+                {
+                    auto & inst = LinuxDeviceOptions::GetInstance();
+
+                    char payloadBuffer[chip::QRCodeBasicSetupPayloadGenerator::kMaxQRCodeBase38RepresentationLength + 1];
+                    chip::MutableCharSpan qrCode(payloadBuffer);
+
+                    CHIP_ERROR err = GetQRCode(qrCode, inst.payload);
+                    if (err != CHIP_NO_ERROR)
+                    {
+                        char error_str[255];
+                        chip::FormatCHIPError(error_str, sizeof(error_str), err);
+                        ChipLogError(DeviceLayer, "%s", error_str);
+                    }
+                    else
+                    {
+                        ChipLogProgress(DeviceLayer, "%s", qrCode.data());
+                        if (write(wled_fifo_out_fd, qrCode.data(), qrCode.size()) < (int) qrCode.size())
+                            ChipLogError(DeviceLayer, "Could not write!");
+                    }
+                }
                 else
                 {
                     ChipLogError(DeviceLayer, "Got unknown operation: %s", operation);
                 }
 
-                if (write(wled_fifo_out_fd, success ? "0" : "1", 1) < 1)
-                    ChipLogError(DeviceLayer, "Could not write!");
+                if (operation[0] != '3')
+                    if (write(wled_fifo_out_fd, success ? "0" : "1", 1) < 1)
+                        ChipLogError(DeviceLayer, "Could not write!");
             }
 
             close(wled_fifo_out_fd);

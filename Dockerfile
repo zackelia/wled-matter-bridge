@@ -60,8 +60,12 @@ FROM ubuntu:jammy
 RUN apt update && \
     DEBIAN_FRONTEND=noninteractive apt install -y \
         python3 \
+        python3-pip \
+        python3-venv \
         libglib2.0-0 && \
-    mkdir /var/chip
+    mkdir /var/chip && \
+    python3 -m venv venv && \
+    venv/bin/python -m pip install qrcode
 
 COPY --from=builder /wled-matter-bridge/src/out/host/wled-matter-bridge /wled-matter-bridge
 COPY --from=builder /wled-matter-bridge/tools /tools
