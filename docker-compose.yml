@@ -7,5 +7,7 @@ services:
     volumes:
       - ./data:/var/chip
     environment:
+      # Setup code used when provisioning a device
+      # - WLED_SETUP_CODE=20202021
       # Prevent certain devices from being added via mDNS
       # - WLED_DENY_LIST="192.168.0.100,192.168.0.101"

@@ -54,6 +54,7 @@
 
 #include <array>
 #include <cassert>
+#include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <math.h>
@@ -1333,6 +1334,23 @@ void ApplicationShutdown()
 
 int main(int argc, char * argv[])
 {
+    auto & inst = LinuxDeviceOptions::GetInstance();
+
+    auto setup_code = std::getenv("WLED_SETUP_CODE");
+    if (setup_code)
+    {
+        inst.payload.setUpPINCode = static_cast<uint32_t>(std::stoi(setup_code));
+        if (!inst.payload.IsValidSetupPIN(inst.payload.setUpPINCode))
+        {
+            ChipLogError(DeviceLayer, "Invalid setup code: %d", inst.payload.setUpPINCode);
+            return -1;
+        }
+    }
+
+    auto discriminator = std::getenv("WLED_DISCRIMINATOR");
+    if (discriminator)
+        inst.discriminator.SetValue(static_cast<uint16_t>(std::stoi(discriminator)));
+
     if (ChipLinuxAppInit(argc, argv) != 0)
     {
         return -1;
