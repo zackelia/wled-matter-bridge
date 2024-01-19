@@ -1,3 +1,5 @@
+#include <limits.h>
+
 #include <lib/support/logging/CHIPLogging.h>
 #include <platform/KeyValueStoreManager.h>
 
@@ -52,7 +54,7 @@ KVS::KVS(uint8_t aMax_endpoints) : max_endpoints(aMax_endpoints)
 
 struct wled_instance
 {
-    char ip[40];
+    char ip[HOST_NAME_MAX + 1];
     char location[40];
     uint8_t endpoint;
 };

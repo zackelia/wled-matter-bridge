@@ -15,7 +15,7 @@ docker compose up -d
 
 During operation, it may be needed to change what devices the bridge is connected to. For instance, there may be a WLED device not accessible by mDNS or there may be a WLED device that is no longer available.
 
-There is a simple bridge.py script that can add/remove arbitrary IP addresses as well as generate the provisioning QR code.
+There is a simple bridge.py script that can add/remove arbitrary IP addresses/hostnames as well as generate the provisioning QR code.
 
 ```
 docker exec wled-matter-bridge /tools/bridge.py qr
