@@ -5,8 +5,26 @@ RUN ln -sf /bin/bash /bin/sh
 
 RUN apt update && \
     DEBIAN_FRONTEND=noninteractive apt install -y \
-        git && \
-    git clone https://github.com/zackelia/wled-matter-bridge && \
+        cmake \
+        git \
+        python3 \
+        python3-pip \
+        python3-venv \
+        pkg-config \ 
+        libssl-dev \ 
+        libdbus-1-dev \
+        libglib2.0-dev \
+        libavahi-client-dev \
+        ninja-build \
+        python3-venv \
+        python3-dev\
+        python3-pip \
+        unzip \
+        libgirepository1.0-dev \
+        libcairo2-dev \
+        libreadline-dev
+
+RUN git clone https://github.com/zackelia/wled-matter-bridge && \
     cd wled-matter-bridge && \
     git submodule update --init && \
     cd third_party/connectedhomeip && \
@@ -24,25 +42,6 @@ RUN apt update && \
     source scripts/activate.sh
 
 WORKDIR /wled-matter-bridge
-
-RUN DEBIAN_FRONTEND=noninteractive apt install -y \
-        cmake \
-        python3 \
-        python3-pip \
-        python3-venv \
-        pkg-config \ 
-        libssl-dev \ 
-        libdbus-1-dev \
-        libglib2.0-dev \
-        libavahi-client-dev \
-        ninja-build \
-        python3-venv \
-        python3-dev\
-        python3-pip \
-        unzip \
-        libgirepository1.0-dev \
-        libcairo2-dev \
-        libreadline-dev
 
 RUN cmake -S third_party/curl/repo -B third_party/curl/repo/build -DBUILD_STATIC_LIBS=on -DENABLE_WEBSOCKETS=on && \
     cmake --build third_party/curl/repo/build --target libcurl_static -j
