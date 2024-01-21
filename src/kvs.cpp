@@ -57,6 +57,7 @@ struct wled_instance
     char ip[HOST_NAME_MAX + 1];
     char location[40];
     uint8_t endpoint;
+    char reserved[256];
 };
 
 std::vector<std::tuple<uint8_t, WLED *>> KVS::get_wleds()
