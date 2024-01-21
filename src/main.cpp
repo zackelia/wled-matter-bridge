@@ -1312,7 +1312,12 @@ void ApplicationInit()
         }
     }
 
-#if ENABLE_MDNS
+    char * disable_mdns = std::getenv("WLED_DISABLE_MDNS");
+    if (disable_mdns)
+    {
+        ChipLogProgress(DeviceLayer, "mDNS querying disabled!");
+    }
+    else
     {
         pthread_t mdns_thread;
         res = pthread_create(&mdns_thread, nullptr, mdns_monitoring_thread, nullptr);
@@ -1322,9 +1327,6 @@ void ApplicationInit()
             exit(1);
         }
     }
-#else
-    ChipLogProgress(DeviceLayer, "mDNS querying disabled!");
-#endif
 }
 
 void ApplicationShutdown()

@@ -11,3 +11,5 @@ services:
       # - WLED_SETUP_CODE=20202021
       # Prevent certain devices from being added via mDNS
       # - WLED_DENY_LIST="192.168.0.100,192.168.0.101"
+      # Disable mDNS entirely, devices must be manually added
+      # - WLED_DISABLE_MDNS=1
