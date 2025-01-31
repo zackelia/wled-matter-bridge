@@ -13,5 +13,6 @@
                 "ms-python.python"
             ]
         }
-    }
+    },
+    "containerUser": "user"
 }
