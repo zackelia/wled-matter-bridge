@@ -1007,8 +1007,8 @@ void * wled_monitoring_thread(void * context)
             if (read_bytes < 0)
                 ChipLogError(DeviceLayer, "Could not read from FIFO");
 
-            char buf[100];
-            read_bytes = read(wled_fifo_in_fd, buf, sizeof(buf));
+            char buf[100]{};
+            read_bytes = read(wled_fifo_in_fd, buf, sizeof(buf) - 1);
             if (read_bytes < 0)
             {
                 ChipLogError(DeviceLayer, "Could not read from FIFO");
