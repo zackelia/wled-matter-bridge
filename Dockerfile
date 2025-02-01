@@ -44,7 +44,7 @@ RUN cmake -S third_party/curl/repo -B third_party/curl/repo/build -DBUILD_STATIC
 RUN cd third_party/connectedhomeip && \
     source scripts/activate.sh && \
     cd ../../src && \
-    gn gen out/host && \
+    gn gen out/host --args='is_debug=false' && \
     ninja -C out/host && \
     strip out/host/wled-matter-bridge
 
