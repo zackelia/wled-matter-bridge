@@ -296,7 +296,8 @@ private:
                 // Alert the main thread to listen for this socket now
                 extern int wled_monitor_pipe[2];
                 char buf[1] = { 1 };
-                write(wled_monitor_pipe[1], buf, 1);
+                if (write(wled_monitor_pipe[1], buf, 1) < 1)
+                    ChipLogError(DeviceLayer, "Could not write!");
                 return;
             }
 

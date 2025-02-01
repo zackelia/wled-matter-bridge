@@ -988,7 +988,8 @@ void * wled_monitoring_thread(void * context)
         {
             char buf[1];
             // Don't care what it is, just breaking out of select
-            read(wled_monitor_pipe[0], &buf, 1);
+            if (read(wled_monitor_pipe[0], &buf, 1) < 0)
+                ChipLogError(DeviceLayer, "Could not read from FIFO");
         }
 
         if (FD_ISSET(wled_fifo_in_fd, &rfds))
@@ -1102,7 +1103,8 @@ bool add_wled(uint8_t index, WLED * device)
 
     // Tell the monitoring thread there is a new WLED device
     char buf[1] = { 1 };
-    write(wled_monitor_pipe[1], buf, 1);
+    if (write(wled_monitor_pipe[1], buf, 1) < 1)
+        ChipLogError(DeviceLayer, "Could not write!");
 
     return true;
 }
@@ -1183,7 +1185,8 @@ bool remove_wled_by_ip(std::string ip)
 
     // Tell the monitoring thread there is a new WLED device
     char buf[1] = { 1 };
-    write(wled_monitor_pipe[1], buf, 1);
+    if (write(wled_monitor_pipe[1], buf, 1) < 1)
+        ChipLogError(DeviceLayer, "Could not write!");
 
     return result;
 }
