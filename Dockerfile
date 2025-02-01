@@ -10,8 +10,8 @@ RUN apt update && \
         python3 \
         python3-pip \
         python3-venv \
-        pkg-config \ 
-        libssl-dev \ 
+        pkg-config \
+        libssl-dev \
         libdbus-1-dev \
         libglib2.0-dev \
         libavahi-client-dev \
@@ -29,16 +29,11 @@ RUN git clone https://github.com/zackelia/wled-matter-bridge && \
     git submodule update --init && \
     cd third_party/connectedhomeip && \
     # *Significantly* faster to get the submodules we need rather than let activate.sh get them all
-    git submodule update --init --recursive --remote -- third_party/pigweed/ && \
-    git submodule update --init --recursive --remote -- third_party/jsoncpp/ && \
-    # TODO: Why doesn't the submodule in the repo get the one that has the sdk directory?
-    git clone https://android.googlesource.com/platform/external/perfetto -b v39.0 --depth 1 third_party/perfetto/repo && \
-    git submodule update --init --recursive --remote -- third_party/nlunit-test/ && \
-    git submodule update --init --recursive --remote -- third_party/nlassert/ && \
-    git submodule update --init --recursive --remote -- third_party/nlio/ && \
-    # Small hack... https://github.com/project-chip/connectedhomeip/issues/31102
-    (source scripts/activate.sh || \
-    .environment/pigweed-venv/bin/pip install "prompt-toolkit==3.0.43") && \
+    git submodule update --init --recursive -- \
+        third_party/pigweed \
+        third_party/jsoncpp \
+        third_party/nlassert \
+        third_party/nlio && \
     source scripts/activate.sh
 
 WORKDIR /wled-matter-bridge

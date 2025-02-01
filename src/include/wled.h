@@ -26,6 +26,7 @@
 #include <string>
 #include <string_view>
 #include <sys/select.h>
+#include <unistd.h>
 #include <utility>
 
 #include <curl/curl.h>
@@ -151,11 +152,11 @@ public:
         // There doesn't seem to be a way in Matter to control a white channel
         if (SUPPORTS_RGB(led_info.capabilities))
         {
-            caps += static_cast<int>(chip::app::Clusters::ColorControl::ColorCapabilities::kHueSaturationSupported);
+            caps += static_cast<int>(chip::app::Clusters::ColorControl::ColorCapabilities::HueSaturationSupported);
         }
         if (SUPPORTS_COLOR_TEMPERATURE(led_info.capabilities))
         {
-            caps += static_cast<int>(chip::app::Clusters::ColorControl::ColorCapabilities::kColorTemperatureSupported);
+            caps += static_cast<int>(chip::app::Clusters::ColorControl::ColorCapabilities::ColorTemperatureSupported);
         }
         return static_cast<uint16_t>(caps);
     }

@@ -161,7 +161,7 @@ DeviceColorTemperature::DeviceColorTemperature(const char * szDeviceName, std::s
 
 uint16_t DeviceColorTemperature::Capabilities()
 {
-    return static_cast<uint16_t>(chip::app::Clusters::ColorControl::ColorCapabilities::kColorTemperatureSupported);
+    return static_cast<uint16_t>(chip::app::Clusters::ColorControl::ColorCapabilities::ColorTemperatureSupported);
 }
 
 uint16_t DeviceColorTemperature::Mireds()
@@ -202,8 +202,8 @@ DeviceExtendedColor::DeviceExtendedColor(const char * szDeviceName, std::string 
 
 uint16_t DeviceExtendedColor::Capabilities()
 {
-    return static_cast<uint16_t>(chip::app::Clusters::ColorControl::ColorCapabilities::kColorTemperatureSupported) +
-        static_cast<uint16_t>(chip::app::Clusters::ColorControl::ColorCapabilities::kHueSaturationSupported);
+    return static_cast<uint16_t>(chip::app::Clusters::ColorControl::ColorCapabilities::ColorTemperatureSupported) +
+        static_cast<uint16_t>(chip::app::Clusters::ColorControl::ColorCapabilities::HueSaturationSupported);
 }
 
 uint8_t DeviceExtendedColor::Hue()

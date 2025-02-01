@@ -29,7 +29,7 @@
 #include <app/reporting/reporting.h>
 #include <app/server/OnboardingCodesUtil.h>
 #include <app/util/af-types.h>
-#include <app/util/af.h>
+#include <app/util/att-storage.h>
 #include <app/util/attribute-storage.h>
 #include <app/util/util.h>
 #include <credentials/DeviceAttestationCredsProvider.h>
@@ -224,12 +224,12 @@ constexpr CommandId colorControlIncomingCommands[] = {
 };
 
 DECLARE_DYNAMIC_CLUSTER_LIST_BEGIN(bridgedLightClusters)
-DECLARE_DYNAMIC_CLUSTER(Identify::Id, identifyAttrs, identifyIncomingCommands, nullptr),
-    DECLARE_DYNAMIC_CLUSTER(OnOff::Id, onOffAttrs, onOffIncomingCommands, nullptr),
-    DECLARE_DYNAMIC_CLUSTER(LevelControl::Id, levelControlAttrs, levelControlIncomingCommands, nullptr),
-    DECLARE_DYNAMIC_CLUSTER(ColorControl::Id, colorControlAttrs, colorControlIncomingCommands, nullptr),
-    DECLARE_DYNAMIC_CLUSTER(Descriptor::Id, descriptorAttrs, nullptr, nullptr),
-    DECLARE_DYNAMIC_CLUSTER(BridgedDeviceBasicInformation::Id, bridgedDeviceBasicAttrs, nullptr,
+DECLARE_DYNAMIC_CLUSTER(Identify::Id, identifyAttrs, ZAP_CLUSTER_MASK(SERVER), identifyIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(OnOff::Id, onOffAttrs, ZAP_CLUSTER_MASK(SERVER), onOffIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(LevelControl::Id, levelControlAttrs, ZAP_CLUSTER_MASK(SERVER), levelControlIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(ColorControl::Id, colorControlAttrs, ZAP_CLUSTER_MASK(SERVER), colorControlIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Descriptor::Id, descriptorAttrs, ZAP_CLUSTER_MASK(SERVER), nullptr, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(BridgedDeviceBasicInformation::Id, bridgedDeviceBasicAttrs, ZAP_CLUSTER_MASK(SERVER), nullptr,
                             nullptr) DECLARE_DYNAMIC_CLUSTER_LIST_END;
 
 // Declare Bridged Light endpoint
@@ -268,16 +268,16 @@ int AddDeviceEndpoint(uint8_t index, Device * dev, EmberAfEndpointType * ep, con
     if (nullptr == gDevices[index])
     {
         gDevices[index] = dev;
-        EmberAfStatus ret;
+        CHIP_ERROR err;
         while (true)
         {
             // Todo: Update this to schedule the work rather than use this lock
             DeviceLayer::StackLock lock;
             dev->SetEndpointId(index + gFirstDynamicEndpointId);
             dev->SetParentEndpointId(parentEndpointId);
-            ret = emberAfSetDynamicEndpoint(index, index + gFirstDynamicEndpointId, ep, dataVersionStorage, deviceTypeList,
+            err = emberAfSetDynamicEndpoint(index, index + gFirstDynamicEndpointId, ep, dataVersionStorage, deviceTypeList,
                                             parentEndpointId);
-            if (ret == EMBER_ZCL_STATUS_SUCCESS)
+            if (err == CHIP_NO_ERROR)
             {
                 ChipLogProgress(DeviceLayer, "Added device %s to dynamic endpoint %d (index=%d)", dev->GetName(),
                                 index + gFirstDynamicEndpointId, index);
@@ -287,10 +287,9 @@ int AddDeviceEndpoint(uint8_t index, Device * dev, EmberAfEndpointType * ep, con
                 emberAfColorControlClusterServerInitCallback(dev->GetEndpointId());
                 return index;
             }
-            if (ret != EMBER_ZCL_STATUS_DUPLICATE_EXISTS)
+            if (err != CHIP_ERROR_ENDPOINT_EXISTS)
             {
-                ChipLogError(DeviceLayer, "Got unhandled error: %d", ret);
-                abort();
+                gDevices[index] = nullptr;
                 return -1;
             }
         }
@@ -310,12 +309,11 @@ int RemoveDeviceEndpoint(Device * dev)
         {
             // Todo: Update this to schedule the work rather than use this lock
             DeviceLayer::StackLock lock;
-            EndpointId ep   = emberAfClearDynamicEndpoint(index);
-            gDevices[index] = nullptr;
-            ChipLogProgress(DeviceLayer, "Removed device %s from dynamic endpoint %d (index=%d)", dev->GetName(), ep, index);
             // Silence complaints about unused ep when progress logging
             // disabled.
-            UNUSED_VAR(ep);
+            [[maybe_unused]] EndpointId ep = emberAfClearDynamicEndpoint(index);
+            gDevices[index]                = nullptr;
+            ChipLogProgress(DeviceLayer, "Removed device %s from dynamic endpoint %d (index=%d)", dev->GetName(), ep, index);
             return index;
         }
         index++;
@@ -464,8 +462,8 @@ void unhandled_attribute()
 #endif
 }
 
-EmberAfStatus HandleReadBridgedDeviceBasicAttribute(Device * dev, chip::AttributeId attributeId, uint8_t * buffer,
-                                                    uint16_t maxReadLength)
+Protocols::InteractionModel::Status HandleReadBridgedDeviceBasicAttribute(Device * dev, chip::AttributeId attributeId,
+                                                                          uint8_t * buffer, uint16_t maxReadLength)
 {
     using namespace BridgedDeviceBasicInformation::Attributes;
 
@@ -508,13 +506,14 @@ EmberAfStatus HandleReadBridgedDeviceBasicAttribute(Device * dev, chip::Attribut
     else
     {
         unhandled_attribute();
-        return EMBER_ZCL_STATUS_FAILURE;
+        return Protocols::InteractionModel::Status::Failure;
     }
 
-    return EMBER_ZCL_STATUS_SUCCESS;
+    return Protocols::InteractionModel::Status::Success;
 }
 
-EmberAfStatus HandleReadIdentifyAttribute(Device * dev, chip::AttributeId attributeId, uint8_t * buffer, uint16_t maxReadLength)
+Protocols::InteractionModel::Status HandleReadIdentifyAttribute(Device * dev, chip::AttributeId attributeId, uint8_t * buffer,
+                                                                uint16_t maxReadLength)
 {
     ChipLogProgress(DeviceLayer, "HandleReadIdentifyAttribute: attrId=%d, maxReadLength=%d", attributeId, maxReadLength);
 
@@ -538,12 +537,13 @@ EmberAfStatus HandleReadIdentifyAttribute(Device * dev, chip::AttributeId attrib
     else
     {
         unhandled_attribute();
-        return EMBER_ZCL_STATUS_FAILURE;
+        return Protocols::InteractionModel::Status::Failure;
     }
-    return EMBER_ZCL_STATUS_SUCCESS;
+    return Protocols::InteractionModel::Status::Success;
 }
 
-EmberAfStatus HandleReadOnOffAttribute(DeviceOnOff * dev, chip::AttributeId attributeId, uint8_t * buffer, uint16_t maxReadLength)
+Protocols::InteractionModel::Status HandleReadOnOffAttribute(DeviceOnOff * dev, chip::AttributeId attributeId, uint8_t * buffer,
+                                                             uint16_t maxReadLength)
 {
     ChipLogProgress(DeviceLayer, "HandleReadOnOffAttribute: attrId=%d, maxReadLength=%d", attributeId, maxReadLength);
 
@@ -561,14 +561,14 @@ EmberAfStatus HandleReadOnOffAttribute(DeviceOnOff * dev, chip::AttributeId attr
     else
     {
         unhandled_attribute();
-        return EMBER_ZCL_STATUS_FAILURE;
+        return Protocols::InteractionModel::Status::Failure;
     }
 
-    return EMBER_ZCL_STATUS_SUCCESS;
+    return Protocols::InteractionModel::Status::Success;
 }
 
-EmberAfStatus HandleReadLevelControlAttribute(DeviceDimmable * dev, chip::AttributeId attributeId, uint8_t * buffer,
-                                              uint16_t maxReadLength)
+Protocols::InteractionModel::Status HandleReadLevelControlAttribute(DeviceDimmable * dev, chip::AttributeId attributeId,
+                                                                    uint8_t * buffer, uint16_t maxReadLength)
 {
     ChipLogProgress(DeviceLayer, "HandleReadLevelControlAttribute: attrId=%d, maxReadLength=%d", attributeId, maxReadLength);
 
@@ -612,14 +612,14 @@ EmberAfStatus HandleReadLevelControlAttribute(DeviceDimmable * dev, chip::Attrib
     else
     {
         unhandled_attribute();
-        return EMBER_ZCL_STATUS_FAILURE;
+        return Protocols::InteractionModel::Status::Failure;
     }
 
-    return EMBER_ZCL_STATUS_SUCCESS;
+    return Protocols::InteractionModel::Status::Success;
 }
 
-EmberAfStatus HandleReadColorControlAttribute(DeviceColorTemperature * dev, chip::AttributeId attributeId, uint8_t * buffer,
-                                              uint16_t maxReadLength)
+Protocols::InteractionModel::Status HandleReadColorControlAttribute(DeviceColorTemperature * dev, chip::AttributeId attributeId,
+                                                                    uint8_t * buffer, uint16_t maxReadLength)
 {
     ChipLogProgress(DeviceLayer, "HandleReadColorControlAttribute: attrId=%d, maxReadLength=%d", attributeId, maxReadLength);
     if ((attributeId == ColorControl::Attributes::CurrentHue::Id) && (maxReadLength == 1))
@@ -694,13 +694,13 @@ EmberAfStatus HandleReadColorControlAttribute(DeviceColorTemperature * dev, chip
     else
     {
         unhandled_attribute();
-        return EMBER_ZCL_STATUS_FAILURE;
+        return Protocols::InteractionModel::Status::Failure;
     }
 
-    return EMBER_ZCL_STATUS_SUCCESS;
+    return Protocols::InteractionModel::Status::Success;
 }
 
-EmberAfStatus HandleWriteIdentifyAttribute(Device * dev, chip::AttributeId attributeId, uint8_t * buffer)
+Protocols::InteractionModel::Status HandleWriteIdentifyAttribute(Device * dev, chip::AttributeId attributeId, uint8_t * buffer)
 {
     ChipLogProgress(DeviceLayer, "HandleWriteIdentifyAttribute: attrId=%d", attributeId);
     if ((attributeId == Identify::Attributes::IdentifyTime::Id) && (dev->IsReachable()))
@@ -712,13 +712,13 @@ EmberAfStatus HandleWriteIdentifyAttribute(Device * dev, chip::AttributeId attri
     else
     {
         unhandled_attribute();
-        return EMBER_ZCL_STATUS_FAILURE;
+        return Protocols::InteractionModel::Status::Failure;
     }
 
-    return EMBER_ZCL_STATUS_SUCCESS;
+    return Protocols::InteractionModel::Status::Success;
 }
 
-EmberAfStatus HandleWriteOnOffAttribute(DeviceOnOff * dev, chip::AttributeId attributeId, uint8_t * buffer)
+Protocols::InteractionModel::Status HandleWriteOnOffAttribute(DeviceOnOff * dev, chip::AttributeId attributeId, uint8_t * buffer)
 {
     ChipLogProgress(DeviceLayer, "HandleWriteOnOffAttribute: attrId=%d", attributeId);
 
@@ -737,13 +737,14 @@ EmberAfStatus HandleWriteOnOffAttribute(DeviceOnOff * dev, chip::AttributeId att
     else
     {
         unhandled_attribute();
-        return EMBER_ZCL_STATUS_FAILURE;
+        return Protocols::InteractionModel::Status::Failure;
     }
 
-    return EMBER_ZCL_STATUS_SUCCESS;
+    return Protocols::InteractionModel::Status::Success;
 }
 
-EmberAfStatus HandleWriteLevelControlAttribute(DeviceDimmable * dev, chip::AttributeId attributeId, uint8_t * buffer)
+Protocols::InteractionModel::Status HandleWriteLevelControlAttribute(DeviceDimmable * dev, chip::AttributeId attributeId,
+                                                                     uint8_t * buffer)
 {
     ChipLogProgress(DeviceLayer, "HandleWriteLevelControlAttribute: attrId=%d", attributeId);
 
@@ -760,13 +761,14 @@ EmberAfStatus HandleWriteLevelControlAttribute(DeviceDimmable * dev, chip::Attri
     else
     {
         unhandled_attribute();
-        return EMBER_ZCL_STATUS_FAILURE;
+        return Protocols::InteractionModel::Status::Failure;
     }
 
-    return EMBER_ZCL_STATUS_SUCCESS;
+    return Protocols::InteractionModel::Status::Success;
 }
 
-EmberAfStatus HandleWriteColorControlAttribute(DeviceColorTemperature * dev, chip::AttributeId attributeId, uint8_t * buffer)
+Protocols::InteractionModel::Status HandleWriteColorControlAttribute(DeviceColorTemperature * dev, chip::AttributeId attributeId,
+                                                                     uint8_t * buffer)
 {
     ChipLogProgress(DeviceLayer, "HandleWriteColorControlAttribute: attrId=%d", attributeId);
 
@@ -789,31 +791,31 @@ EmberAfStatus HandleWriteColorControlAttribute(DeviceColorTemperature * dev, chi
     else if ((attributeId == ColorControl::Attributes::ColorMode::Id) && (dev->IsReachable()))
     {
         // TODO: This should not be writable???? Why is this getting called????
-        dev->SetColorMode(*(ColorControl::ColorMode *) (buffer));
+        dev->SetColorMode(*(uint8_t *) (buffer));
         ChipLogProgress(DeviceLayer, "ColorControl::Attributes::ColorMode: %d", *buffer);
     }
     else if ((attributeId == ColorControl::Attributes::EnhancedColorMode::Id) && (dev->IsReachable()))
     {
         // TODO: This should not be writable???? Why is this getting called????
-        dev->SetColorMode(*(ColorControl::ColorMode *) (buffer));
+        dev->SetColorMode(*(uint8_t *) (buffer));
         ChipLogProgress(DeviceLayer, "ColorControl::Attributes::EnhancedColorMode: %d", *buffer);
     }
     else
     {
         unhandled_attribute();
-        return EMBER_ZCL_STATUS_FAILURE;
+        return Protocols::InteractionModel::Status::Failure;
     }
 
-    return EMBER_ZCL_STATUS_SUCCESS;
+    return Protocols::InteractionModel::Status::Success;
 }
 
-EmberAfStatus emberAfExternalAttributeReadCallback(EndpointId endpoint, ClusterId clusterId,
-                                                   const EmberAfAttributeMetadata * attributeMetadata, uint8_t * buffer,
-                                                   uint16_t maxReadLength)
+Protocols::InteractionModel::Status emberAfExternalAttributeReadCallback(EndpointId endpoint, ClusterId clusterId,
+                                                                         const EmberAfAttributeMetadata * attributeMetadata,
+                                                                         uint8_t * buffer, uint16_t maxReadLength)
 {
     uint16_t endpointIndex = emberAfGetDynamicIndexFromEndpoint(endpoint);
 
-    EmberAfStatus ret = EMBER_ZCL_STATUS_FAILURE;
+    Protocols::InteractionModel::Status ret = Protocols::InteractionModel::Status::Failure;
 
     if ((endpointIndex < CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT) && (gDevices[endpointIndex] != nullptr))
     {
@@ -850,12 +852,13 @@ EmberAfStatus emberAfExternalAttributeReadCallback(EndpointId endpoint, ClusterI
     return ret;
 }
 
-EmberAfStatus emberAfExternalAttributeWriteCallback(EndpointId endpoint, ClusterId clusterId,
-                                                    const EmberAfAttributeMetadata * attributeMetadata, uint8_t * buffer)
+Protocols::InteractionModel::Status emberAfExternalAttributeWriteCallback(EndpointId endpoint, ClusterId clusterId,
+                                                                          const EmberAfAttributeMetadata * attributeMetadata,
+                                                                          uint8_t * buffer)
 {
     uint16_t endpointIndex = emberAfGetDynamicIndexFromEndpoint(endpoint);
 
-    EmberAfStatus ret = EMBER_ZCL_STATUS_FAILURE;
+    Protocols::InteractionModel::Status ret = Protocols::InteractionModel::Status::Failure;
 
     if (endpointIndex < CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT)
     {
