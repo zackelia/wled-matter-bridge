@@ -31,6 +31,8 @@ wled-matter-bridge *should* work in all Matter compliant environments including 
 
 I have personally tested when paired to Apple HomeKit, Home Assistant, and Matter's testing tool all at once.
 
+Google Home does not allow connections to development devices without creating a project in the Google Developer Console. To set this up, follow the [Tasmota Matter setup instructions](https://tasmota.github.io/docs/Matter-with-Google/), using a Vendor ID of 0xFFF1 and a Product ID of 0x8001.
+
 ### WLED
 
 wled-matter-bridge *should* work with all WLED device types.
