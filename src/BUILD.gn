@@ -32,11 +32,11 @@ executable("wled-matter-bridge") {
     "${chip_root}/examples/platform/linux:app-main",
     "${chip_root}/src/lib",
     "${chip_root}/third_party/jsoncpp",
+    "//third_party/curl",
     "//third_party/mdns",
   ]
 
   libs = [
-    "//third_party/curl/repo/build/lib/libcurl.a",
     "z"
   ]
 
@@ -52,7 +52,6 @@ executable("wled-matter-bridge") {
 
   include_dirs = [
     "include",
-    "//third_party/curl/repo/include/",
   ]
 
   output_dir = root_out_dir

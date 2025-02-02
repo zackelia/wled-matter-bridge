@@ -38,9 +38,6 @@ RUN git clone https://github.com/zackelia/wled-matter-bridge && \
 
 WORKDIR /wled-matter-bridge
 
-RUN cmake -S third_party/curl/repo -B third_party/curl/repo/build -DBUILD_STATIC_LIBS=on -DENABLE_WEBSOCKETS=on && \
-    cmake --build third_party/curl/repo/build --target libcurl_static -j
-
 RUN cd third_party/connectedhomeip && \
     source scripts/activate.sh && \
     cd ../../src && \
