@@ -51,7 +51,7 @@ static mdns_string_t ipv6_address_to_string(char * buffer, size_t capacity, cons
     return str;
 }
 
-static char namebuffer[256];
+static char namebuffer[256]{};
 
 static int query_callback(int sock, const struct sockaddr * from, size_t addrlen, mdns_entry_type_t entry, uint16_t query_id,
                           uint16_t rtype, uint16_t rclass, uint32_t ttl, const void * data, size_t size, size_t name_offset,
@@ -93,7 +93,7 @@ MDNS::~MDNS()
     mdns_socket_close(sock);
 }
 
-static char buffer[2048];
+static char buffer[2048]{};
 bool MDNS::send_query()
 {
     // char buffer[2048];
@@ -109,9 +109,9 @@ bool MDNS::send_query()
 std::string MDNS::recv_query()
 {
     // char buffer[2048];
-    char ip[40];
+    char ip[41]{};
     // sprintf(ip, "%s", "aaaa");
-    int ret = mdns_query_recv(sock, buffer, sizeof(buffer), query_callback, ip, 0);
+    int ret = mdns_query_recv(sock, buffer, sizeof(buffer) - 1, query_callback, ip, 0);
     if (ret < 0)
     {
         std::cerr << "mdns_query_recv: " << ret << std::endl;

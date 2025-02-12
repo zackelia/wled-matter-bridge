@@ -30,8 +30,8 @@ static constexpr uint32_t clear_bit(uint32_t num, uint8_t bit)
 
 static void handle_chip_error(ChipError err)
 {
-    char error_str[255];
-    chip::FormatCHIPError(error_str, sizeof(error_str), err);
+    char error_str[255]{};
+    chip::FormatCHIPError(error_str, sizeof(error_str) - 1, err);
     ChipLogError(DeviceLayer, "%s", error_str);
 }
 

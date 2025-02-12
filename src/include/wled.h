@@ -44,7 +44,7 @@ class WLED : public DeviceExtendedColor
 {
 public:
     WLED(std::string_view aIp, std::string szLocation)
-    noexcept : DeviceExtendedColor(("WLED " + std::string(aIp)).c_str(), szLocation), ip(aIp)
+        noexcept : DeviceExtendedColor(("WLED " + std::string(aIp)).c_str(), szLocation), ip(aIp)
     {
         websocket_addr = [&]() {
             std::string temp = "ws://";
@@ -320,8 +320,8 @@ private:
     {
         size_t rlen;
         const struct curl_ws_frame * meta;
-        char buffer[MAX_WEBSOCKET_BYTES];
-        CURLcode result = curl_ws_recv(curl, buffer, sizeof(buffer), &rlen, &meta);
+        char buffer[MAX_WEBSOCKET_BYTES]{};
+        CURLcode result = curl_ws_recv(curl, buffer, sizeof(buffer) - 1, &rlen, &meta);
         if (result == CURLE_AGAIN)
         {
             // Multithreaded programming is hard, we probably already read the intended message

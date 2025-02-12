@@ -85,7 +85,7 @@ constexpr const char * WLED_FIFO_IN  = LOCALSTATEDIR "/wled-fifo-in";
 constexpr const char * WLED_FIFO_OUT = LOCALSTATEDIR "/wled-fifo-out";
 
 EndpointId gFirstDynamicEndpointId;
-Device * gDevices[CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT];
+Device * gDevices[CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT]{};
 std::vector<Room *> gRooms;
 std::vector<Action *> gActions;
 
