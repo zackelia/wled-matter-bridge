@@ -43,8 +43,8 @@
 class WLED : public DeviceExtendedColor
 {
 public:
-    WLED(std::string_view aIp, std::string szLocation)
-        noexcept : DeviceExtendedColor(("WLED " + std::string(aIp)).c_str(), szLocation), ip(aIp)
+    WLED(std::string_view aIp, std::string szLocation) noexcept :
+        DeviceExtendedColor(("WLED " + std::string(aIp)).c_str(), szLocation), ip(aIp)
     {
         websocket_addr = [&]() {
             std::string temp = "ws://";
@@ -318,37 +318,68 @@ private:
 
     int recv(bool is_response = false) noexcept
     {
-        size_t rlen;
-        const struct curl_ws_frame * meta;
         char buffer[MAX_WEBSOCKET_BYTES]{};
-        CURLcode result = curl_ws_recv(curl, buffer, sizeof(buffer) - 1, &rlen, &meta);
-        if (result == CURLE_AGAIN)
+        size_t offset        = 0;
+        CURLcode result      = CURLE_OK;
+        long bytes_remaining = 0;
+
+        while (!result)
         {
-            // Multithreaded programming is hard, we probably already read the intended message
-            return 0;
-        }
-        if (result != CURLE_OK || (meta && meta->flags & CURLWS_CLOSE))
-        {
-            if (result == CURLE_GOT_NOTHING)
+            size_t recv                       = 0;
+            const struct curl_ws_frame * meta = nullptr;
+            result                            = curl_ws_recv(curl, buffer + offset, sizeof(buffer) - offset, &recv, &meta);
+            offset += recv;
+
+            if (result == CURLE_OK)
             {
-                ChipLogProgress(DeviceLayer, "Got nothing from websocket, unexpectedly disconnected");
+                if (meta->bytesleft == 0)
+                {
+                    break;
+                }
+                if (meta->bytesleft > (curl_off_t) (sizeof(buffer) - offset))
+                {
+                    ChipLogError(DeviceLayer, "Device buffer not large enough");
+                    abort();
+                }
+                bytes_remaining = meta->bytesleft;
             }
-            else if (meta && meta->flags & CURLWS_CLOSE)
+            else if (result == CURLE_AGAIN)
             {
-                ChipLogProgress(DeviceLayer, "Websocket was closed");
+                if (bytes_remaining)
+                {
+                    ChipLogProgress(DeviceLayer, "Device not ready to send remaining data, sleeping 20ms...");
+                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                    result = CURLE_OK;
+                }
+                else
+                {
+                    // Multithreaded programming is hard, we probably already read the intended message
+                    return 0;
+                }
             }
             else
             {
-                ChipLogError(DeviceLayer, "Unknown error: curl_ws_recv - %s", curl_easy_strerror(result));
-            }
-            SetReachable(false);
+                if (result == CURLE_GOT_NOTHING)
+                {
+                    ChipLogProgress(DeviceLayer, "Got nothing from websocket, unexpectedly disconnected");
+                }
+                else if (meta && meta->flags & CURLWS_CLOSE)
+                {
+                    ChipLogProgress(DeviceLayer, "Websocket was closed");
+                }
+                else
+                {
+                    ChipLogError(DeviceLayer, "Unknown error: curl_ws_recv - %s", curl_easy_strerror(result));
+                }
+                SetReachable(false);
 
-            using namespace std::chrono_literals;
-            if (reconnect_future.valid() && reconnect_future.wait_for(0s) != std::future_status::ready)
+                using namespace std::chrono_literals;
+                if (reconnect_future.valid() && reconnect_future.wait_for(0s) != std::future_status::ready)
+                    return -1;
+
+                reconnect_future = std::async(std::launch::async, [=] { this->reconnect(); });
                 return -1;
-
-            reconnect_future = std::async(std::launch::async, [=] { this->reconnect(); });
-            return -1;
+            }
         }
 
         if (is_response)
@@ -548,5 +579,5 @@ private:
     Json::Reader reader;
     Json::FastWriter writer;
 
-    static constexpr int MAX_WEBSOCKET_BYTES = 1450;
+    static constexpr int MAX_WEBSOCKET_BYTES = 24576;
 };
