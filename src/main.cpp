@@ -27,9 +27,7 @@
 #include <app/ConcreteAttributePath.h>
 #include <app/EventLogging.h>
 #include <app/reporting/reporting.h>
-#include <app/server/OnboardingCodesUtil.h>
 #include <app/util/af-types.h>
-#include <app/util/att-storage.h>
 #include <app/util/attribute-storage.h>
 #include <app/util/util.h>
 #include <credentials/DeviceAttestationCredsProvider.h>
@@ -38,6 +36,7 @@
 #include <lib/support/CHIPMem.h>
 #include <lib/support/ZclString.h>
 #include <platform/CommissionableDataProvider.h>
+#include <setup_payload/OnboardingCodesUtil.h>
 #include <setup_payload/QRCodeSetupPayloadGenerator.h>
 #include <setup_payload/SetupPayload.h>
 
@@ -73,6 +72,10 @@ using namespace chip::Transport;
 using namespace chip::DeviceLayer;
 using namespace chip::app::Clusters;
 
+// These variables need to be in global scope for bridged-actions-stub.cpp to access them
+std::vector<Room *> gRooms;
+std::vector<Action *> gActions;
+
 namespace {
 
 const int kNodeLabelSize = 32;
@@ -86,8 +89,6 @@ constexpr const char * WLED_FIFO_OUT = LOCALSTATEDIR "/wled-fifo-out";
 
 EndpointId gFirstDynamicEndpointId;
 Device * gDevices[CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT]{};
-std::vector<Room *> gRooms;
-std::vector<Action *> gActions;
 
 // ENDPOINT DEFINITIONS:
 // =================================================================================
@@ -239,7 +240,8 @@ wled::KVS * kvs;
 wled::MDNS * mdns;
 std::vector<std::string> deny_list;
 std::vector<WLED *> gLights;
-std::array<std::array<DataVersion, ArraySize(bridgedLightClusters)>, CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT> gDataVersions;
+std::array<std::array<DataVersion, MATTER_ARRAY_SIZE(bridgedLightClusters)>, CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT>
+    gDataVersions;
 
 Room room1("Room 1", 0xE001, Actions::EndpointListTypeEnum::kRoom, true);
 
@@ -364,6 +366,11 @@ std::vector<EndpointListInfo> GetEndpointListInfo(chip::EndpointId parentId)
 std::vector<Action *> GetActionListInfo(chip::EndpointId parentId)
 {
     return gActions;
+}
+
+std::vector<Room *> GetRoomListInfo(chip::EndpointId parentId)
+{
+    return gRooms;
 }
 
 namespace {
@@ -908,32 +915,6 @@ void runOnOffRoomAction(Room * room, bool actionOn, EndpointId endpointId, uint1
     }
 }
 
-bool emberAfActionsClusterInstantActionCallback(app::CommandHandler * commandObj, const app::ConcreteCommandPath & commandPath,
-                                                const Actions::Commands::InstantAction::DecodableType & commandData)
-{
-    bool hasInvokeID      = false;
-    uint32_t invokeID     = 0;
-    EndpointId endpointID = commandPath.mEndpointId;
-    auto & actionID       = commandData.actionID;
-
-    if (commandData.invokeID.HasValue())
-    {
-        hasInvokeID = true;
-        invokeID    = commandData.invokeID.Value();
-    }
-
-    if (actionID == action1.getActionId() && action1.getIsVisible())
-    {
-        // Turn On Lights in Room 1
-        runOnOffRoomAction(&room1, true, endpointID, actionID, invokeID, hasInvokeID);
-        commandObj->AddStatus(commandPath, Protocols::InteractionModel::Status::Success);
-        return true;
-    }
-
-    commandObj->AddStatus(commandPath, Protocols::InteractionModel::Status::NotFound);
-    return true;
-}
-
 const EmberAfDeviceType gBridgedExtendedColorDeviceTypes[] = { { DEVICE_TYPE_LO_EXTENDED_COLOR_LIGHT, DEVICE_VERSION_DEFAULT },
                                                                { DEVICE_TYPE_BRIDGED_NODE, DEVICE_VERSION_DEFAULT } };
 
@@ -1127,8 +1108,8 @@ bool add_wled_by_ip(std::string ip)
         }
     }
 
-    uint8_t next_endpoint                             = CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT;
-    DataVersion temp[ArraySize(bridgedLightClusters)] = {};
+    uint8_t next_endpoint                                     = CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT;
+    DataVersion temp[MATTER_ARRAY_SIZE(bridgedLightClusters)] = {};
 
     for (uint8_t i = (uint8_t) gFirstDynamicEndpointId; i < CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT; i++)
     {

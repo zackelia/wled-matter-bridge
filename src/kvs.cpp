@@ -15,17 +15,17 @@ static const std::string WLED_BITS_KEY = WLED_PREFIX + "BITS";
 
 static constexpr bool is_bit_set(uint32_t num, uint8_t bit)
 {
-    return ((num & (1 << bit)) != 0) ? 1 : 0;
+    return ((num & (static_cast<uint32_t>(1) << bit)) != 0) ? 1 : 0;
 }
 
 static constexpr uint32_t set_bit(uint32_t num, uint8_t bit)
 {
-    return num | (1 << bit);
+    return num | (static_cast<uint32_t>(1) << bit);
 }
 
 static constexpr uint32_t clear_bit(uint32_t num, uint8_t bit)
 {
-    return (num & (~(1 << bit)));
+    return (num & (~(static_cast<uint32_t>(1) << bit)));
 }
 
 static void handle_chip_error(ChipError err)
