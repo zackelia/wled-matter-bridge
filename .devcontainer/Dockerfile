@@ -1,4 +1,4 @@
-FROM ubuntu:jammy
+FROM ubuntu:noble
 
 RUN apt update && \
     DEBIAN_FRONTEND=noninteractive apt install -y \
@@ -24,15 +24,6 @@ RUN apt update && \
         libreadline-dev \
         sudo
 
-ARG USER_NAME=user
-ARG USER_UID=1000
-ARG USER_GID=1000
-
-# Create the user and group
-RUN groupadd --gid $USER_GID $USER_NAME \
-    && useradd --uid $USER_UID --gid $USER_GID -m $USER_NAME -s /bin/bash
-
-# Give the user sudo permissions
-RUN echo "$USER_NAME ALL=(ALL:ALL) NOPASSWD:ALL" >> /etc/sudoers
+RUN echo "ubuntu ALL=(ALL:ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 CMD ["/bin/bash"]

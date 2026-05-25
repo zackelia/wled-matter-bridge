@@ -1,4 +1,4 @@
-FROM ubuntu:jammy AS builder
+FROM ubuntu:noble AS builder
 
 # connectedhomeip/scripts/activate.sh doesn't seem to work in /bin/sh
 RUN ln -sf /bin/bash /bin/sh
@@ -45,7 +45,7 @@ RUN cd third_party/connectedhomeip && \
     ninja -C out/host && \
     strip out/host/wled-matter-bridge
 
-FROM ubuntu:jammy
+FROM ubuntu:noble
 
 RUN apt update && \
     DEBIAN_FRONTEND=noninteractive apt install -y \
