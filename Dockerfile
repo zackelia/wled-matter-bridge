@@ -42,6 +42,7 @@ RUN cd third_party/connectedhomeip && \
     source scripts/activate.sh && \
     cd ../../src && \
     gn gen out/host --args='is_debug=false' && \
+    python3 scripts/generate_version_header.py out/host/gen/include/generated_version.h && \
     ninja -C out/host && \
     strip out/host/wled-matter-bridge
 
